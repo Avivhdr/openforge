@@ -544,27 +544,27 @@ async fn poll_pr_comments(db: &Database, github_client: &GitHubClient) {
   - Estimated effort: 4 hours
   - Deliverable: Svelte component with 5 columns, drag-and-drop, ticket cards
 
-- [ ] **Task 5.2**: Build detail panel component
+- [x] **Task 5.2**: Build detail panel component
   - Parallelizable: Yes (can work alongside 5.1)
   - Estimated effort: 3 hours
   - Deliverable: Svelte component with tabs: Overview, Agent Logs, Checkpoints, PR Comments
 
-- [ ] **Task 5.3**: Implement live log viewer (SSE streaming)
+- [x] **Task 5.3**: Implement live log viewer (SSE streaming)
   - Parallelizable: No (depends on 5.2, 1.4)
   - Estimated effort: 2 hours
   - Deliverable: Svelte component that subscribes to OpenCode SSE stream, displays logs with auto-scroll
 
-- [ ] **Task 5.4**: Build checkpoint approval UI
+- [x] **Task 5.4**: Build checkpoint approval UI
   - Parallelizable: No (depends on 5.2, 4.2)
   - Estimated effort: 2 hours
   - Deliverable: Svelte component showing checkpoint data with Approve/Reject buttons
 
-- [ ] **Task 5.5**: Build PR comment batch UI
+- [x] **Task 5.5**: Build PR comment batch UI
   - Parallelizable: No (depends on 5.2, 3.3)
   - Estimated effort: 2 hours
   - Deliverable: Svelte component with comment list, checkboxes, "Address Selected" button
 
-- [ ] **Task 5.6**: Build settings panel
+- [x] **Task 5.6**: Build settings panel
   - Parallelizable: Yes (independent)
   - Estimated effort: 2 hours
   - Deliverable: Svelte component with forms for JIRA (API token, board ID, username, filters), GitHub, OpenCode config

@@ -19,7 +19,7 @@
 //! - Skips polling when github_token is empty
 
 use crate::db::{Database, PrRow};
-use crate::github_client::GitHubClient;
+use crate::github_client::{GitHubClient, PullRequest};
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::time::{sleep, Duration};
@@ -61,7 +61,16 @@ pub async fn start_github_poller(app: AppHandle) {
 
         println!("[GitHub Poller] Polling GitHub for PR comments...");
 
-        // Get all open PRs from database
+        // Sync open PRs from GitHub API into database
+        if !config.github_default_repo.is_empty() {
+            if let Err(e) = sync_open_prs(&github_client, &db, &config).await {
+                eprintln!("[GitHub Poller] Failed to sync open PRs: {}", e);
+            }
+        } else {
+            eprintln!("[GitHub Poller] github_default_repo not configured, skipping PR sync");
+        }
+
+        // Get all open PRs from database (now populated by sync)
         let open_prs = match get_open_prs(&db) {
             Ok(prs) => prs,
             Err(e) => {
@@ -104,6 +113,7 @@ pub async fn start_github_poller(app: AppHandle) {
 #[derive(Debug)]
 struct PollerConfig {
     github_token: String,
+    github_default_repo: String,
     poll_interval: u64,
 }
 
@@ -116,6 +126,11 @@ fn read_poller_config(db: &Mutex<Database>) -> Result<PollerConfig, String> {
         .map_err(|e| e.to_string())?
         .unwrap_or_default();
 
+    let github_default_repo = db
+        .get_config("github_default_repo")
+        .map_err(|e| e.to_string())?
+        .unwrap_or_default();
+
     let poll_interval = db
         .get_config("github_poll_interval")
         .map_err(|e| e.to_string())?
@@ -125,14 +140,135 @@ fn read_poller_config(db: &Mutex<Database>) -> Result<PollerConfig, String> {
 
     Ok(PollerConfig {
         github_token,
+        github_default_repo,
         poll_interval,
     })
 }
 
-/// Get all open PRs from database
 fn get_open_prs(db: &Mutex<Database>) -> Result<Vec<PrRow>, String> {
     let db = db.lock().unwrap();
     db.get_open_prs().map_err(|e| e.to_string())
+}
+
+async fn sync_open_prs(
+    github_client: &GitHubClient,
+    db: &Mutex<Database>,
+    config: &PollerConfig,
+) -> Result<usize, String> {
+    let parts: Vec<&str> = config.github_default_repo.split('/').collect();
+    if parts.len() != 2 {
+        return Err("github_default_repo must be in format 'owner/repo'".to_string());
+    }
+    let (repo_owner, repo_name) = (parts[0], parts[1]);
+
+    let github_prs = github_client
+        .list_open_prs(repo_owner, repo_name, &config.github_token)
+        .await
+        .map_err(|e| format!("Failed to list open PRs: {}", e))?;
+
+    let ticket_ids = {
+        let db_lock = db.lock().unwrap();
+        db_lock
+            .get_all_ticket_ids()
+            .map_err(|e| format!("Failed to get ticket IDs: {}", e))?
+    };
+
+    let open_pr_ids: Vec<i64> = github_prs.iter().map(|pr| pr.number).collect();
+
+    {
+        let db_lock = db.lock().unwrap();
+        db_lock
+            .close_stale_open_prs(repo_owner, repo_name, &open_pr_ids)
+            .map_err(|e| format!("Failed to close stale PRs: {}", e))?;
+    }
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+
+    let mut synced = 0;
+    for pr in &github_prs {
+        let matched_ticket = find_matching_ticket(&pr, &ticket_ids);
+        let ticket_id = match matched_ticket {
+            Some(id) => id,
+            None => continue,
+        };
+
+        let db_lock = db.lock().unwrap();
+        db_lock
+            .insert_pull_request(
+                pr.number,
+                &ticket_id,
+                repo_owner,
+                repo_name,
+                &pr.title,
+                &pr.html_url,
+                &pr.state,
+                now,
+                now,
+            )
+            .map_err(|e| format!("Failed to upsert PR #{}: {}", pr.number, e))?;
+        drop(db_lock);
+        synced += 1;
+    }
+
+    println!(
+        "[GitHub Poller] Synced {} PRs ({} open on GitHub, {} matched tickets)",
+        synced,
+        github_prs.len(),
+        synced
+    );
+
+    Ok(synced)
+}
+
+fn find_matching_ticket(pr: &PullRequest, ticket_ids: &[String]) -> Option<String> {
+    for ticket_id in ticket_ids {
+        if pr.title.contains(ticket_id) || pr.head.ref_name.contains(ticket_id) {
+            return Some(ticket_id.clone());
+        }
+    }
+    for candidate in extract_jira_keys(&pr.title)
+        .into_iter()
+        .chain(extract_jira_keys(&pr.head.ref_name))
+    {
+        if ticket_ids.contains(&candidate) {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+fn extract_jira_keys(text: &str) -> Vec<String> {
+    let mut keys = Vec::new();
+    let chars: Vec<char> = text.chars().collect();
+    let len = chars.len();
+    let mut i = 0;
+
+    while i < len {
+        if chars[i].is_ascii_uppercase() {
+            let start = i;
+            while i < len && chars[i].is_ascii_uppercase() {
+                i += 1;
+            }
+            if i < len && chars[i] == '-' && i > start {
+                i += 1;
+                let digit_start = i;
+                while i < len && chars[i].is_ascii_digit() {
+                    i += 1;
+                }
+                if i > digit_start {
+                    let key: String = chars[start..i].iter().collect();
+                    keys.push(key);
+                }
+            }
+        } else {
+            i += 1;
+        }
+    }
+
+    keys
 }
 
 /// Poll a single PR for new comments

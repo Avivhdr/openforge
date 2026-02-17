@@ -74,8 +74,16 @@ async fn get_tickets(
     db: State<'_, Mutex<db::Database>>,
 ) -> Result<Vec<TicketRow>, String> {
     let db = db.lock().unwrap();
-    db.get_all_tickets()
-        .map_err(|e| format!("Failed to get tickets: {}", e))
+    match db.get_all_tickets() {
+        Ok(tickets) => {
+            println!("[get_tickets] Returning {} tickets", tickets.len());
+            Ok(tickets)
+        }
+        Err(e) => {
+            eprintln!("[get_tickets] Error: {}", e);
+            Err(format!("Failed to get tickets: {}", e))
+        }
+    }
 }
 
 /// Sync JIRA now (one-shot sync, not the background loop)
@@ -158,7 +166,7 @@ async fn sync_jira_now(
     // Upsert tickets to database
     let mut success_count = 0;
     for issue in issues {
-        let jira_status = issue.fields.status.name.clone();
+        let jira_status = issue.fields.status.as_ref().map(|s| s.name.clone()).unwrap_or_default();
         let status = map_jira_status_to_cockpit(&jira_status);
         let description = issue
             .fields
@@ -237,14 +245,12 @@ async fn transition_ticket(
         .map_err(|e| format!("Failed to transition ticket: {}", e))
 }
 
-/// Poll GitHub PR comments now (one-shot sync)
 #[tauri::command]
 async fn poll_pr_comments_now(
     db: State<'_, Mutex<db::Database>>,
     github_client: State<'_, GitHubClient>,
     app: tauri::AppHandle,
 ) -> Result<usize, String> {
-    // Read config from database
     let (github_token, github_default_repo) = {
         let db_lock = db.lock().unwrap();
 
@@ -265,16 +271,58 @@ async fn poll_pr_comments_now(
         return Err("github_token not configured".to_string());
     }
 
-    // Parse repo owner and name from github_default_repo (format: "owner/repo")
-    let (repo_owner, repo_name) = {
-        let parts: Vec<&str> = github_default_repo.split('/').collect();
-        if parts.len() != 2 {
-            return Err("github_default_repo must be in format 'owner/repo'".to_string());
-        }
-        (parts[0].to_string(), parts[1].to_string())
+    let parts: Vec<&str> = github_default_repo.split('/').collect();
+    if parts.len() != 2 {
+        return Err("github_default_repo must be in format 'owner/repo'".to_string());
+    }
+    let (repo_owner, repo_name) = (parts[0].to_string(), parts[1].to_string());
+
+    let github_prs = github_client
+        .list_open_prs(&repo_owner, &repo_name, &github_token)
+        .await
+        .map_err(|e| format!("Failed to list open PRs: {}", e))?;
+
+    let ticket_ids = {
+        let db_lock = db.lock().unwrap();
+        db_lock
+            .get_all_ticket_ids()
+            .map_err(|e| format!("Failed to get ticket IDs: {}", e))?
     };
 
-    // Get all open PRs from database
+    let open_pr_ids: Vec<i64> = github_prs.iter().map(|pr| pr.number).collect();
+
+    {
+        let db_lock = db.lock().unwrap();
+        db_lock
+            .close_stale_open_prs(&repo_owner, &repo_name, &open_pr_ids)
+            .map_err(|e| format!("Failed to close stale PRs: {}", e))?;
+    }
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+
+    for pr in &github_prs {
+        let matched_ticket = ticket_ids.iter().find(|tid| {
+            pr.title.contains(tid.as_str()) || pr.head.ref_name.contains(tid.as_str())
+        });
+        if let Some(ticket_id) = matched_ticket {
+            let db_lock = db.lock().unwrap();
+            let _ = db_lock.insert_pull_request(
+                pr.number,
+                ticket_id,
+                &repo_owner,
+                &repo_name,
+                &pr.title,
+                &pr.html_url,
+                &pr.state,
+                now,
+                now,
+            );
+        }
+    }
+
     let open_prs = {
         let db_lock = db.lock().unwrap();
         db_lock
@@ -284,27 +332,23 @@ async fn poll_pr_comments_now(
 
     let mut new_comment_count = 0;
 
-    // For each PR, fetch comments and insert new ones
     for pr in open_prs {
         let comments = github_client
-            .get_pr_comments(&repo_owner, &repo_name, pr.id, &github_token)
+            .get_pr_comments(&pr.repo_owner, &pr.repo_name, pr.id, &github_token)
             .await
             .map_err(|e| format!("Failed to fetch PR comments: {}", e))?;
 
         for comment in comments {
-            // Check if comment already exists
             let db_lock = db.lock().unwrap();
             let exists = db_lock
                 .comment_exists(comment.id)
                 .map_err(|e| format!("Failed to check comment existence: {}", e))?;
 
             if !exists {
-                // Parse timestamp
                 let created_at = chrono::DateTime::parse_from_rfc3339(&comment.created_at)
                     .map_err(|e| format!("Failed to parse timestamp: {}", e))?
                     .timestamp();
 
-                // Insert comment
                 db_lock
                     .insert_pr_comment(
                         comment.id,
@@ -320,7 +364,6 @@ async fn poll_pr_comments_now(
 
                 new_comment_count += 1;
 
-                // Emit event for new comment
                 let _ = app.emit("new-pr-comment", serde_json::json!({
                     "pr_id": pr.id,
                     "comment_id": comment.id,
@@ -447,6 +490,41 @@ async fn get_agent_logs(
         .map_err(|e| format!("Failed to get agent logs: {}", e))
 }
 
+/// Check if OpenCode CLI is installed on the system
+#[tauri::command]
+async fn check_opencode_installed() -> Result<OpenCodeInstallStatus, String> {
+    let output = std::process::Command::new("which")
+        .arg("opencode")
+        .output();
+
+    match output {
+        Ok(out) if out.status.success() => {
+            let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            let version = std::process::Command::new("opencode")
+                .arg("--version")
+                .output()
+                .ok()
+                .and_then(|v| {
+                    if v.status.success() {
+                        Some(String::from_utf8_lossy(&v.stdout).trim().to_string())
+                    } else {
+                        None
+                    }
+                });
+            Ok(OpenCodeInstallStatus {
+                installed: true,
+                path: Some(path),
+                version,
+            })
+        }
+        _ => Ok(OpenCodeInstallStatus {
+            installed: false,
+            path: None,
+            version: None,
+        }),
+    }
+}
+
 #[tauri::command]
 async fn get_config(
     db: State<'_, Mutex<db::Database>>,
@@ -488,6 +566,13 @@ fn map_jira_status_to_cockpit(jira_status: &str) -> &'static str {
 struct OpenCodeStatus {
     api_url: String,
     healthy: bool,
+    version: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+struct OpenCodeInstallStatus {
+    installed: bool,
+    path: Option<String>,
     version: Option<String>,
 }
 
@@ -576,7 +661,8 @@ fn main() {
             abort_session,
             get_agent_logs,
             get_config,
-            set_config
+            set_config,
+            check_opencode_installed
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

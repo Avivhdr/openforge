@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Ticket, AgentSession, KanbanColumn } from '../lib/types'
   import { COLUMNS, COLUMN_LABELS } from '../lib/types'
-  import { tickets, selectedTicketId, activeSessions } from '../lib/stores'
+  import { tickets, selectedTicketId, activeSessions, error } from '../lib/stores'
   import { startTicketImplementation } from '../lib/ipc'
   import TicketCard from './TicketCard.svelte'
 
@@ -32,8 +32,9 @@
     closeContextMenu()
     try {
       await startTicketImplementation(contextMenu.ticketId)
-    } catch (e) {
-      console.error('Failed to start implementation:', e)
+    } catch (err: unknown) {
+      console.error('Failed to start implementation:', err)
+      $error = String(err)
     }
   }
 </script>

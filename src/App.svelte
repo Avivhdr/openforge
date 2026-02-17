@@ -2,26 +2,31 @@
   import { onMount, onDestroy } from 'svelte'
   import { listen } from '@tauri-apps/api/event'
   import type { UnlistenFn } from '@tauri-apps/api/event'
-  import { tickets, selectedTicketId, activeSessions, error } from './lib/stores'
-  import { getTickets, getOpenCodeStatus, getSessionStatus } from './lib/ipc'
+  import { tickets, selectedTicketId, activeSessions, error, isLoading } from './lib/stores'
+  import { getTickets, getOpenCodeStatus, getSessionStatus, checkOpenCodeInstalled } from './lib/ipc'
   import type { OpenCodeStatus, PrComment } from './lib/types'
   import KanbanBoard from './components/KanbanBoard.svelte'
   import DetailPanel from './components/DetailPanel.svelte'
   import SettingsPanel from './components/SettingsPanel.svelte'
+  import Toast from './components/Toast.svelte'
 
   let openCodeStatus: OpenCodeStatus | null = null
   let unlisteners: UnlistenFn[] = []
   let showSettings = false
   let prComments: PrComment[] = []
+  let openCodeInstalled: boolean | null = null
 
   $: selectedTicket = $tickets.find(t => t.id === $selectedTicketId) || null
 
   async function loadTickets() {
+    $isLoading = true
     try {
       $tickets = await getTickets()
     } catch (e) {
       console.error('Failed to load tickets:', e)
       $error = String(e)
+    } finally {
+      $isLoading = false
     }
   }
 
@@ -34,6 +39,13 @@
   }
 
   onMount(async () => {
+    try {
+      const installStatus = await checkOpenCodeInstalled()
+      openCodeInstalled = installStatus.installed
+    } catch {
+      openCodeInstalled = false
+    }
+
     await loadTickets()
     await checkOpenCode()
 
@@ -107,12 +119,28 @@
     </div>
   </header>
 
+  {#if openCodeInstalled === false}
+    <div class="setup-banner">
+      <strong>OpenCode CLI not found.</strong>
+      Install it to enable AI agent features:
+      <code>curl -fsSL https://opencode.ai/install | bash</code>
+      <button class="dismiss-btn" on:click={() => openCodeInstalled = null}>Dismiss</button>
+    </div>
+  {/if}
+
   <main class="main-content">
     {#if showSettings}
       <SettingsPanel on:close={() => showSettings = false} />
     {:else}
       <div class="board-area" class:has-detail={selectedTicket !== null}>
-        <KanbanBoard />
+        {#if $isLoading && $tickets.length === 0}
+          <div class="loading-overlay">
+            <div class="spinner"></div>
+            <span>Loading tickets...</span>
+          </div>
+        {:else}
+          <KanbanBoard />
+        {/if}
       </div>
       {#if selectedTicket}
         <div class="detail-area">
@@ -122,6 +150,8 @@
     {/if}
   </main>
 </div>
+
+<Toast />
 
 <style>
   :global(:root) {
@@ -242,5 +272,59 @@
   .settings-btn:hover {
     color: var(--text-primary);
     border-color: var(--accent);
+  }
+
+  .setup-banner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 20px;
+    background: var(--warning);
+    color: var(--bg-primary);
+    font-size: 0.8rem;
+    flex-shrink: 0;
+  }
+
+  .setup-banner code {
+    background: rgba(0, 0, 0, 0.15);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+  }
+
+  .dismiss-btn {
+    all: unset;
+    margin-left: auto;
+    cursor: pointer;
+    font-size: 0.75rem;
+    opacity: 0.7;
+  }
+
+  .dismiss-btn:hover {
+    opacity: 1;
+  }
+
+  .loading-overlay {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    gap: 12px;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+  }
+
+  .spinner {
+    width: 24px;
+    height: 24px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
   }
 </style>

@@ -57,6 +57,10 @@ export async function markCommentAddressed(commentId: number): Promise<void> {
   return invoke("mark_comment_addressed", { commentId });
 }
 
+export async function checkOpenCodeInstalled(): Promise<{ installed: boolean; path: string | null; version: string | null }> {
+  return invoke("check_opencode_installed");
+}
+
 export async function getConfig(key: string): Promise<string | null> {
   return invoke<string | null>("get_config", { key });
 }

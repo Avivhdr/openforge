@@ -346,6 +346,47 @@ impl GitHubClient {
         let pr = self.get_pr_details(owner, repo, pr_number, token).await?;
         Ok(pr.state)
     }
+
+    /// List all open pull requests for a repository
+    pub async fn list_open_prs(
+        &self,
+        owner: &str,
+        repo: &str,
+        token: &str,
+    ) -> Result<Vec<PullRequest>, GitHubError> {
+        let url = format!(
+            "https://api.github.com/repos/{}/{}/pulls?state=open&per_page=100",
+            owner, repo
+        );
+
+        let response = self
+            .client
+            .get(&url)
+            .header("Authorization", format!("token {}", token))
+            .header("User-Agent", "ai-command-center")
+            .send()
+            .await
+            .map_err(|e| GitHubError::NetworkError(e.to_string()))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unable to read response body".to_string());
+            return Err(GitHubError::ApiError {
+                status: status.as_u16(),
+                message: body,
+            });
+        }
+
+        let prs: Vec<PullRequest> = response
+            .json()
+            .await
+            .map_err(|e| GitHubError::ParseError(e.to_string()))?;
+
+        Ok(prs)
+    }
 }
 
 impl Default for GitHubClient {
@@ -366,6 +407,7 @@ pub struct PullRequest {
     pub state: String,
     pub html_url: String,
     pub user: GitHubUser,
+    pub head: GitHubHead,
     #[serde(flatten)]
     pub extra: serde_json::Value,
 }
@@ -389,6 +431,16 @@ pub struct PrComment {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct GitHubUser {
     pub login: String,
+    #[serde(flatten)]
+    pub extra: serde_json::Value,
+}
+
+/// GitHub head ref (branch info)
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct GitHubHead {
+    /// Branch name (e.g., "feature/PROJ-123-fix-bug")
+    #[serde(rename = "ref")]
+    pub ref_name: String,
     #[serde(flatten)]
     pub extra: serde_json::Value,
 }
@@ -530,6 +582,9 @@ mod tests {
             "user": {
                 "login": "testuser"
             },
+            "head": {
+                "ref": "feature/PROJ-123-fix-bug"
+            },
             "extra_field": "ignored"
         }"#;
 
@@ -538,5 +593,6 @@ mod tests {
         assert_eq!(pr.title, "Test PR");
         assert_eq!(pr.state, "open");
         assert_eq!(pr.user.login, "testuser");
+        assert_eq!(pr.head.ref_name, "feature/PROJ-123-fix-bug");
     }
 }

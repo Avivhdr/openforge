@@ -648,6 +648,54 @@ impl Database {
         Ok(result)
     }
 
+    pub fn get_all_ticket_ids(&self) -> Result<Vec<String>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT id FROM tickets")?;
+        let ids = stmt.query_map([], |row| row.get(0))?;
+        let mut result = Vec::new();
+        for id in ids {
+            result.push(id?);
+        }
+        Ok(result)
+    }
+
+    pub fn close_stale_open_prs(
+        &self,
+        repo_owner: &str,
+        repo_name: &str,
+        open_pr_ids: &[i64],
+    ) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        if open_pr_ids.is_empty() {
+            conn.execute(
+                "UPDATE pull_requests SET state = 'closed' WHERE repo_owner = ?1 AND repo_name = ?2 AND state = 'open'",
+                [repo_owner, repo_name],
+            )?;
+        } else {
+            let placeholders: Vec<String> = open_pr_ids
+                .iter()
+                .enumerate()
+                .map(|(i, _)| format!("?{}", i + 3))
+                .collect();
+            let sql = format!(
+                "UPDATE pull_requests SET state = 'closed' WHERE repo_owner = ?1 AND repo_name = ?2 AND state = 'open' AND id NOT IN ({})",
+                placeholders.join(", ")
+            );
+            let mut stmt = conn.prepare(&sql)?;
+            let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![
+                Box::new(repo_owner.to_string()),
+                Box::new(repo_name.to_string()),
+            ];
+            for id in open_pr_ids {
+                params.push(Box::new(*id));
+            }
+            let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+                params.iter().map(|p| p.as_ref()).collect();
+            stmt.execute(param_refs.as_slice())?;
+        }
+        Ok(())
+    }
+
     pub fn mark_comments_addressed(&self, ids: &[i64]) -> Result<()> {
         if ids.is_empty() {
             return Ok(());
@@ -751,5 +799,422 @@ mod tests {
         // Clean up
         drop(db);
         let _ = fs::remove_file(&db_path);
+    }
+
+    fn make_test_db(name: &str) -> (Database, PathBuf) {
+        let db_path = std::env::temp_dir().join(format!("test_{}.db", name));
+        let _ = fs::remove_file(&db_path);
+        let db = Database::new(db_path.clone()).expect("Failed to create database");
+        (db, db_path)
+    }
+
+    fn insert_test_ticket(db: &Database) {
+        db.upsert_ticket(
+            "PROJ-100",
+            "Test ticket",
+            "A description",
+            "todo",
+            "To Do",
+            "alice",
+            1000,
+            1000,
+        )
+        .expect("Failed to insert ticket");
+    }
+
+    #[test]
+    fn test_upsert_ticket_insert_and_retrieve() {
+        let (db, path) = make_test_db("upsert_ticket_insert");
+
+        db.upsert_ticket(
+            "PROJ-1",
+            "My ticket",
+            "desc",
+            "todo",
+            "To Do",
+            "bob",
+            100,
+            200,
+        )
+        .expect("insert failed");
+
+        let tickets = db.get_all_tickets().expect("get_all failed");
+        assert_eq!(tickets.len(), 1);
+        assert_eq!(tickets[0].id, "PROJ-1");
+        assert_eq!(tickets[0].title, "My ticket");
+        assert_eq!(tickets[0].status, "todo");
+        assert_eq!(tickets[0].assignee, Some("bob".to_string()));
+
+        drop(db);
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_upsert_ticket_update_existing() {
+        let (db, path) = make_test_db("upsert_ticket_update");
+
+        db.upsert_ticket(
+            "PROJ-1", "Original", "desc", "todo", "To Do", "bob", 100, 200,
+        )
+        .expect("insert failed");
+        db.upsert_ticket(
+            "PROJ-1",
+            "Updated",
+            "new desc",
+            "in_progress",
+            "In Progress",
+            "alice",
+            100,
+            300,
+        )
+        .expect("update failed");
+
+        let tickets = db.get_all_tickets().expect("get_all failed");
+        assert_eq!(tickets.len(), 1);
+        assert_eq!(tickets[0].title, "Updated");
+        assert_eq!(tickets[0].status, "in_progress");
+
+        drop(db);
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_get_ticket_by_id() {
+        let (db, path) = make_test_db("get_ticket_by_id");
+
+        db.upsert_ticket(
+            "PROJ-5", "Found me", "desc", "todo", "To Do", "alice", 100, 200,
+        )
+        .expect("insert failed");
+
+        let ticket = db.get_ticket("PROJ-5").expect("get failed");
+        assert!(ticket.is_some());
+        assert_eq!(ticket.unwrap().title, "Found me");
+
+        let missing = db.get_ticket("PROJ-999").expect("get failed");
+        assert!(missing.is_none());
+
+        drop(db);
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_agent_session_lifecycle() {
+        let (db, path) = make_test_db("agent_session_lifecycle");
+        insert_test_ticket(&db);
+
+        db.create_agent_session("ses-1", "PROJ-100", None, "read_ticket", "running")
+            .expect("create failed");
+
+        let session = db
+            .get_agent_session("ses-1")
+            .expect("get failed")
+            .expect("not found");
+        assert_eq!(session.ticket_id, "PROJ-100");
+        assert_eq!(session.stage, "read_ticket");
+        assert_eq!(session.status, "running");
+        assert!(session.opencode_session_id.is_none());
+
+        db.set_agent_session_opencode_id("ses-1", "oc-abc")
+            .expect("set opencode id failed");
+
+        let session = db
+            .get_agent_session("ses-1")
+            .expect("get failed")
+            .expect("not found");
+        assert_eq!(session.opencode_session_id, Some("oc-abc".to_string()));
+
+        db.update_agent_session(
+            "ses-1",
+            "implement",
+            "paused",
+            Some("{\"diff\":\"...\"}"),
+            None,
+        )
+        .expect("update failed");
+
+        let session = db
+            .get_agent_session("ses-1")
+            .expect("get failed")
+            .expect("not found");
+        assert_eq!(session.stage, "implement");
+        assert_eq!(session.status, "paused");
+        assert_eq!(
+            session.checkpoint_data,
+            Some("{\"diff\":\"...\"}".to_string())
+        );
+
+        drop(db);
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_get_latest_session_for_ticket() {
+        let (db, path) = make_test_db("latest_session");
+        insert_test_ticket(&db);
+
+        db.create_agent_session("ses-old", "PROJ-100", None, "read_ticket", "completed")
+            .expect("create 1 failed");
+        db.create_agent_session("ses-new", "PROJ-100", None, "implement", "running")
+            .expect("create 2 failed");
+
+        let latest = db
+            .get_latest_session_for_ticket("PROJ-100")
+            .expect("get failed")
+            .expect("not found");
+        assert_eq!(latest.id, "ses-new");
+
+        drop(db);
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_agent_logs() {
+        let (db, path) = make_test_db("agent_logs");
+        insert_test_ticket(&db);
+
+        db.create_agent_session("ses-log", "PROJ-100", None, "implement", "running")
+            .expect("create session failed");
+
+        db.insert_agent_log("ses-log", "stdout", "Building project...")
+            .expect("insert log 1 failed");
+        db.insert_agent_log("ses-log", "stderr", "Warning: unused var")
+            .expect("insert log 2 failed");
+
+        let logs = db.get_agent_logs("ses-log").expect("get logs failed");
+        assert_eq!(logs.len(), 2);
+        assert_eq!(logs[0].log_type, "stdout");
+        assert_eq!(logs[0].content, "Building project...");
+        assert_eq!(logs[1].log_type, "stderr");
+
+        drop(db);
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_pull_request_crud() {
+        let (db, path) = make_test_db("pr_crud");
+        insert_test_ticket(&db);
+
+        db.insert_pull_request(
+            42,
+            "PROJ-100",
+            "acme",
+            "repo",
+            "Fix auth",
+            "https://github.com/acme/repo/pull/42",
+            "open",
+            1000,
+            2000,
+        )
+        .expect("insert pr failed");
+
+        let open_prs = db.get_open_prs().expect("get open prs failed");
+        assert_eq!(open_prs.len(), 1);
+        assert_eq!(open_prs[0].id, 42);
+        assert_eq!(open_prs[0].ticket_id, "PROJ-100");
+        assert_eq!(open_prs[0].state, "open");
+
+        db.insert_pull_request(
+            42,
+            "PROJ-100",
+            "acme",
+            "repo",
+            "Fix auth",
+            "https://github.com/acme/repo/pull/42",
+            "merged",
+            1000,
+            3000,
+        )
+        .expect("update pr failed");
+
+        let open_prs = db.get_open_prs().expect("get open prs failed");
+        assert_eq!(open_prs.len(), 0);
+
+        drop(db);
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_pr_comment_lifecycle() {
+        let (db, path) = make_test_db("pr_comment_lifecycle");
+        insert_test_ticket(&db);
+
+        db.insert_pull_request(
+            10,
+            "PROJ-100",
+            "acme",
+            "repo",
+            "PR title",
+            "https://example.com",
+            "open",
+            1000,
+            1000,
+        )
+        .expect("insert pr failed");
+
+        assert!(!db.comment_exists(501).expect("check failed"));
+
+        db.insert_pr_comment(
+            501,
+            10,
+            "reviewer",
+            "Fix this",
+            "review_comment",
+            Some("src/main.rs"),
+            Some(42),
+            2000,
+        )
+        .expect("insert comment failed");
+        db.insert_pr_comment(
+            502,
+            10,
+            "reviewer",
+            "Nit: rename",
+            "review_comment",
+            None,
+            None,
+            2001,
+        )
+        .expect("insert comment 2 failed");
+
+        assert!(db.comment_exists(501).expect("check failed"));
+
+        let comments = db.get_comments_for_pr(10).expect("get comments failed");
+        assert_eq!(comments.len(), 2);
+        assert_eq!(comments[0].id, 501);
+        assert_eq!(comments[0].author, "reviewer");
+        assert_eq!(comments[0].file_path, Some("src/main.rs".to_string()));
+        assert_eq!(comments[0].addressed, 0);
+
+        db.mark_comment_addressed(501).expect("mark failed");
+
+        let comments = db.get_comments_for_pr(10).expect("get comments failed");
+        assert_eq!(comments[0].addressed, 1);
+        assert_eq!(comments[1].addressed, 0);
+
+        drop(db);
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_get_pr_comments_by_ids() {
+        let (db, path) = make_test_db("pr_comments_by_ids");
+        insert_test_ticket(&db);
+
+        db.insert_pull_request(
+            20,
+            "PROJ-100",
+            "acme",
+            "repo",
+            "PR",
+            "https://example.com",
+            "open",
+            1000,
+            1000,
+        )
+        .expect("insert pr failed");
+
+        db.insert_pr_comment(
+            601,
+            20,
+            "alice",
+            "Comment 1",
+            "review_comment",
+            None,
+            None,
+            3000,
+        )
+        .expect("insert 1 failed");
+        db.insert_pr_comment(
+            602,
+            20,
+            "bob",
+            "Comment 2",
+            "review_comment",
+            None,
+            None,
+            3001,
+        )
+        .expect("insert 2 failed");
+        db.insert_pr_comment(
+            603,
+            20,
+            "carol",
+            "Comment 3",
+            "issue_comment",
+            None,
+            None,
+            3002,
+        )
+        .expect("insert 3 failed");
+
+        let result = db
+            .get_pr_comments_by_ids(&[601, 603])
+            .expect("get by ids failed");
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].author, "alice");
+        assert_eq!(result[1].author, "carol");
+
+        let empty = db.get_pr_comments_by_ids(&[]).expect("empty query failed");
+        assert_eq!(empty.len(), 0);
+
+        drop(db);
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_mark_comments_addressed_batch() {
+        let (db, path) = make_test_db("mark_batch_addressed");
+        insert_test_ticket(&db);
+
+        db.insert_pull_request(
+            30,
+            "PROJ-100",
+            "acme",
+            "repo",
+            "PR",
+            "https://example.com",
+            "open",
+            1000,
+            1000,
+        )
+        .expect("insert pr failed");
+
+        db.insert_pr_comment(701, 30, "a", "c1", "review_comment", None, None, 4000)
+            .expect("insert failed");
+        db.insert_pr_comment(702, 30, "b", "c2", "review_comment", None, None, 4001)
+            .expect("insert failed");
+        db.insert_pr_comment(703, 30, "c", "c3", "review_comment", None, None, 4002)
+            .expect("insert failed");
+
+        db.mark_comments_addressed(&[701, 703])
+            .expect("batch mark failed");
+
+        let comments = db.get_comments_for_pr(30).expect("get failed");
+        assert_eq!(comments[0].addressed, 1);
+        assert_eq!(comments[1].addressed, 0);
+        assert_eq!(comments[2].addressed, 1);
+
+        drop(db);
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_config_set_new_key() {
+        let (db, path) = make_test_db("config_new_key");
+
+        db.set_config("custom_key", "custom_value")
+            .expect("set failed");
+        let val = db.get_config("custom_key").expect("get failed");
+        assert_eq!(val, Some("custom_value".to_string()));
+
+        db.set_config("custom_key", "overwritten")
+            .expect("overwrite failed");
+        let val = db.get_config("custom_key").expect("get failed");
+        assert_eq!(val, Some("overwritten".to_string()));
+
+        drop(db);
+        let _ = fs::remove_file(&path);
     }
 }

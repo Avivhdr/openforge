@@ -262,7 +262,7 @@ fn upsert_ticket_from_jira(db: &Mutex<Database>, issue: &JiraIssue) -> Result<()
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
-    let jira_status = issue.fields.status.name.clone();
+    let jira_status = issue.fields.status.as_ref().map(|s| s.name.clone()).unwrap_or_default();
     let status = map_jira_status_to_cockpit(&jira_status);
     let assignee = issue
         .fields

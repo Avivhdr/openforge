@@ -5,7 +5,7 @@
 //! and transitioning ticket status.
 //!
 //! ## API Endpoints
-//! - GET /rest/api/3/search?jql={jql} — Search issues via JQL
+//! - GET /rest/api/3/search/jql?jql={jql} — Search issues via JQL (enhanced search)
 //! - GET /rest/api/3/issue/{key} — Get issue details
 //! - POST /rest/api/3/issue/{key}/transitions — Transition issue status
 //! - GET /rest/api/3/issue/{key}/transitions — Get available transitions
@@ -69,14 +69,17 @@ impl JiraClient {
         api_token: &str,
         jql: &str,
     ) -> Result<Vec<JiraIssue>, JiraError> {
-        let url = format!("{}/rest/api/3/search", base_url);
+        let url = format!("{}/rest/api/3/search/jql", base_url);
         let auth_header = create_basic_auth_header(email, api_token);
 
         let response = self
             .client
             .get(&url)
             .header("Authorization", auth_header)
-            .query(&[("jql", jql)])
+            .query(&[
+                ("jql", jql),
+                ("fields", "summary,status,description,assignee,priority"),
+            ])
             .send()
             .await
             .map_err(|e| JiraError::NetworkError(e.to_string()))?;
@@ -332,7 +335,8 @@ pub struct JiraFields {
     pub summary: String,
     #[serde(default)]
     pub description: Option<serde_json::Value>,
-    pub status: JiraStatus,
+    #[serde(default)]
+    pub status: Option<JiraStatus>,
     #[serde(default)]
     pub assignee: Option<JiraUser>,
     #[serde(default)]
