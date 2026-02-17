@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Ticket, AgentSession, KanbanColumn } from '../lib/types'
   import { COLUMNS, COLUMN_LABELS } from '../lib/types'
-  import { tickets, selectedTicketId, activeSessions, error } from '../lib/stores'
+  import { tickets, selectedTicketId, activeSessions, ticketPrs, error } from '../lib/stores'
   import { startTicketImplementation } from '../lib/ipc'
   import TicketCard from './TicketCard.svelte'
 
@@ -52,7 +52,7 @@
       <div class="column-body">
         {#each columnTickets as ticket (ticket.id)}
           <div on:contextmenu={(e) => handleContextMenu(e, ticket.id)}>
-            <TicketCard {ticket} session={getSession($activeSessions, ticket.id)} on:select={handleSelect} />
+            <TicketCard {ticket} session={getSession($activeSessions, ticket.id)} pullRequests={$ticketPrs.get(ticket.id) || []} on:select={handleSelect} />
           </div>
         {/each}
         {#if columnTickets.length === 0}

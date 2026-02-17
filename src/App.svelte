@@ -2,8 +2,9 @@
   import { onMount, onDestroy } from 'svelte'
   import { listen } from '@tauri-apps/api/event'
   import type { UnlistenFn } from '@tauri-apps/api/event'
-  import { tickets, selectedTicketId, activeSessions, error, isLoading } from './lib/stores'
-  import { getTickets, getOpenCodeStatus, getSessionStatus, checkOpenCodeInstalled } from './lib/ipc'
+  import { tickets, selectedTicketId, activeSessions, ticketPrs, error, isLoading } from './lib/stores'
+  import { getTickets, getOpenCodeStatus, getSessionStatus, checkOpenCodeInstalled, getPullRequests } from './lib/ipc'
+  import type { PullRequestInfo } from './lib/types'
   import type { OpenCodeStatus, PrComment } from './lib/types'
   import KanbanBoard from './components/KanbanBoard.svelte'
   import DetailPanel from './components/DetailPanel.svelte'
@@ -30,6 +31,21 @@
     }
   }
 
+  async function loadPullRequests() {
+    try {
+      const prs = await getPullRequests()
+      const grouped = new Map<string, PullRequestInfo[]>()
+      for (const pr of prs) {
+        const existing = grouped.get(pr.ticket_id) || []
+        existing.push(pr)
+        grouped.set(pr.ticket_id, existing)
+      }
+      $ticketPrs = grouped
+    } catch (e) {
+      console.error('Failed to load pull requests:', e)
+    }
+  }
+
   async function checkOpenCode() {
     try {
       openCodeStatus = await getOpenCodeStatus()
@@ -47,6 +63,7 @@
     }
 
     await loadTickets()
+    await loadPullRequests()
     await checkOpenCode()
 
     unlisteners.push(
@@ -81,6 +98,7 @@
     unlisteners.push(
       await listen('new-pr-comment', () => {
         loadTickets()
+        loadPullRequests()
       })
     )
 

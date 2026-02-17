@@ -342,7 +342,35 @@ impl Database {
         Ok(result)
     }
 
-    /// Check if a PR comment exists by ID
+    pub fn get_all_pull_requests(&self) -> Result<Vec<PrRow>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, ticket_id, repo_owner, repo_name, title, url, state, created_at, updated_at
+             FROM pull_requests
+             ORDER BY updated_at DESC",
+        )?;
+
+        let prs = stmt.query_map([], |row| {
+            Ok(PrRow {
+                id: row.get(0)?,
+                ticket_id: row.get(1)?,
+                repo_owner: row.get(2)?,
+                repo_name: row.get(3)?,
+                title: row.get(4)?,
+                url: row.get(5)?,
+                state: row.get(6)?,
+                created_at: row.get(7)?,
+                updated_at: row.get(8)?,
+            })
+        })?;
+
+        let mut result = Vec::new();
+        for pr in prs {
+            result.push(pr?);
+        }
+        Ok(result)
+    }
+
     pub fn comment_exists(&self, id: i64) -> Result<bool> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare("SELECT COUNT(*) FROM pr_comments WHERE id = ?1")?;

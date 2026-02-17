@@ -1,9 +1,10 @@
 <script lang="ts">
-  import type { Ticket, AgentSession } from '../lib/types'
+  import type { Ticket, AgentSession, PullRequestInfo } from '../lib/types'
   import { createEventDispatcher } from 'svelte'
 
   export let ticket: Ticket
   export let session: AgentSession | null = null
+  export let pullRequests: PullRequestInfo[] = []
 
   const dispatch = createEventDispatcher()
 
@@ -47,6 +48,23 @@
       {:else if session.status === 'completed'}
         Completed
       {/if}
+    </div>
+  {/if}
+  {#if pullRequests.length > 0}
+    <div class="card-prs">
+      {#each pullRequests as pr}
+        <a
+          href={pr.url}
+          target="_blank"
+          rel="noopener"
+          class="pr-link"
+          class:pr-open={pr.state === 'open'}
+          class:pr-closed={pr.state !== 'open'}
+          on:click|stopPropagation
+        >
+          PR #{pr.id}
+        </a>
+      {/each}
     </div>
   {/if}
   {#if ticket.assignee}
@@ -134,6 +152,36 @@
     font-size: 0.7rem;
     color: var(--text-secondary);
     margin-bottom: 4px;
+  }
+
+  .card-prs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-bottom: 4px;
+  }
+
+  .pr-link {
+    font-size: 0.65rem;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 4px;
+    text-decoration: none;
+    transition: opacity 0.15s;
+  }
+
+  .pr-link:hover {
+    opacity: 0.8;
+  }
+
+  .pr-link.pr-open {
+    background: rgba(158, 206, 106, 0.15);
+    color: var(--success);
+  }
+
+  .pr-link.pr-closed {
+    background: rgba(86, 95, 137, 0.2);
+    color: var(--text-secondary);
   }
 
   .card-assignee {

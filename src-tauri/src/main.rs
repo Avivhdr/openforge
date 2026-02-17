@@ -378,7 +378,16 @@ async fn poll_pr_comments_now(
     Ok(new_comment_count)
 }
 
-/// Get all comments for a specific PR
+#[tauri::command]
+async fn get_pull_requests(
+    db: State<'_, Mutex<db::Database>>,
+) -> Result<Vec<db::PrRow>, String> {
+    let db_lock = db.lock().unwrap();
+    db_lock
+        .get_all_pull_requests()
+        .map_err(|e| format!("Failed to get pull requests: {}", e))
+}
+
 #[tauri::command]
 async fn get_pr_comments(
     db: State<'_, Mutex<db::Database>>,
@@ -651,6 +660,7 @@ fn main() {
             sync_jira_now,
             transition_ticket,
             poll_pr_comments_now,
+            get_pull_requests,
             get_pr_comments,
             mark_comment_addressed,
             start_ticket_implementation,

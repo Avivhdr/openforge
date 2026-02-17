@@ -41,6 +41,18 @@ export interface PrComment {
   created_at: number;
 }
 
+export interface PullRequestInfo {
+  id: number;
+  ticket_id: string;
+  repo_owner: string;
+  repo_name: string;
+  title: string;
+  url: string;
+  state: string;
+  created_at: number;
+  updated_at: number;
+}
+
 export interface OpenCodeStatus {
   api_url: string;
   healthy: boolean;

@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Ticket, AgentSession, AgentLog, PrComment, OpenCodeStatus } from "./types";
+import type { Ticket, AgentSession, AgentLog, PrComment, PullRequestInfo, OpenCodeStatus } from "./types";
 
 export async function getTickets(): Promise<Ticket[]> {
   return invoke<Ticket[]>("get_tickets");
@@ -47,6 +47,10 @@ export async function getAgentLogs(sessionId: string): Promise<AgentLog[]> {
 
 export async function pollPrCommentsNow(): Promise<number> {
   return invoke<number>("poll_pr_comments_now");
+}
+
+export async function getPullRequests(): Promise<PullRequestInfo[]> {
+  return invoke<PullRequestInfo[]>("get_pull_requests");
 }
 
 export async function getPrComments(prId: number): Promise<PrComment[]> {
