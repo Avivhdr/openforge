@@ -458,12 +458,12 @@ async fn poll_pr_comments(db: &Database, github_client: &GitHubClient) {
   - Estimated effort: 2 hours
   - Deliverable: Rust module with SQLite connection, migrations for all tables
 
-- [ ] **Task 1.3**: Implement OpenCode process manager (Rust)
+- [x] **Task 1.3**: Implement OpenCode process manager (Rust)
   - Parallelizable: Yes (can work alongside 1.2)
   - Estimated effort: 3 hours
   - Deliverable: Rust module that spawns `opencode web`, polls `/health`, kills on exit
 
-- [ ] **Task 1.4**: Create OpenCode REST API client (Rust)
+- [x] **Task 1.4**: Create OpenCode REST API client (Rust)
   - Parallelizable: Yes (can work alongside 1.3)
   - Estimated effort: 2 hours
   - Deliverable: Rust module with functions: `create_session()`, `send_prompt()`, `subscribe_events()`

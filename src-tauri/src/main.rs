@@ -2,11 +2,15 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod db;
+mod opencode_manager;
+mod opencode_client;
 
 use std::sync::Mutex;
 use tauri::Manager;
+use opencode_manager::OpenCodeManager;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     tauri::Builder::default()
         .setup(|app| {
             // Get app data directory and initialize database
@@ -25,6 +29,17 @@ fn main() {
             app.manage(Mutex::new(database));
 
             println!("Database initialized successfully");
+
+            // Start OpenCode server and wait for it to be healthy
+            let opencode_manager = tauri::async_runtime::block_on(async {
+                OpenCodeManager::start().await
+            })
+            .expect("Failed to start OpenCode server");
+
+            println!("OpenCode server started at: {}", opencode_manager.api_url());
+
+            // Store OpenCode manager in app state
+            app.manage(opencode_manager);
 
             Ok(())
         })
