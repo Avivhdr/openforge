@@ -5,6 +5,7 @@ mod db;
 mod opencode_manager;
 mod opencode_client;
 mod jira_client;
+mod jira_sync;
 
 use std::sync::Mutex;
 use tauri::{Manager, State};
@@ -110,6 +111,13 @@ fn main() {
             // Store OpenCode manager and client in app state
             app.manage(opencode_manager);
             app.manage(opencode_client);
+
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                jira_sync::start_jira_sync(app_handle).await;
+            });
+
+            println!("JIRA sync task started");
 
             Ok(())
         })

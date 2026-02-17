@@ -482,7 +482,7 @@ async fn poll_pr_comments(db: &Database, github_client: &GitHubClient) {
   - Estimated effort: 3 hours
   - Deliverable: Rust module with functions: `search_issues(jql)`, `get_ticket_details()`, `transition_ticket()`
 
-- [ ] **Task 2.2**: Implement JIRA sync service (background polling)
+- [x] **Task 2.2**: Implement JIRA sync service (background polling)
   - Parallelizable: No (depends on 2.1)
   - Estimated effort: 2 hours
   - Deliverable: Tokio task that polls JIRA every 60s with JQL filter (assignee = currentUser()), upserts tickets to DB, emits events

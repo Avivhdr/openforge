@@ -126,6 +126,7 @@ impl Database {
         // Insert default config values (using INSERT OR IGNORE to avoid duplicates)
         let default_configs = [
             ("jira_api_token", ""),
+            ("jira_base_url", ""),
             ("jira_board_id", ""),
             ("jira_username", ""),
             ("filter_assigned_to_me", "true"),
@@ -176,6 +177,46 @@ impl Database {
         )?;
         Ok(())
     }
+
+    /// Upsert a ticket (INSERT OR REPLACE)
+    ///
+    /// # Arguments
+    /// * `id` - Ticket ID (JIRA key, e.g., "PROJ-123")
+    /// * `title` - Ticket title/summary
+    /// * `description` - Ticket description
+    /// * `status` - Cockpit status (todo, in_progress, in_review, testing, done)
+    /// * `jira_status` - Original JIRA status name
+    /// * `assignee` - Assignee display name
+    /// * `created_at` - Unix timestamp (seconds)
+    /// * `updated_at` - Unix timestamp (seconds)
+    pub fn upsert_ticket(
+        &self,
+        id: &str,
+        title: &str,
+        description: &str,
+        status: &str,
+        jira_status: &str,
+        assignee: &str,
+        created_at: i64,
+        updated_at: i64,
+    ) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT OR REPLACE INTO tickets (id, title, description, status, jira_status, assignee, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            [
+                id,
+                title,
+                description,
+                status,
+                jira_status,
+                assignee,
+                &created_at.to_string(),
+                &updated_at.to_string(),
+            ],
+        )?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -214,8 +255,8 @@ mod tests {
             .expect("Failed to count config rows");
 
         assert_eq!(
-            config_count, 12,
-            "All 12 default config values should be inserted"
+            config_count, 13,
+            "All 13 default config values should be inserted"
         );
 
         // Clean up

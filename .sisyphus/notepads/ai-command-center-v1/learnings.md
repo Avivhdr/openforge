@@ -421,3 +421,108 @@ const response = await invoke<any>('send_prompt', {
 - Task 2.3: Tauri commands that expose JIRA functions to frontend
 - Task 2.4: Frontend UI for JIRA ticket management
 
+
+## Task 2.2: JIRA Sync Background Service (2026-02-17)
+
+### Implementation Overview
+- Created `src-tauri/src/jira_sync.rs` with background Tokio task for polling JIRA
+- Spawned in main.rs setup hook using `tauri::async_runtime::spawn()`
+- Polls JIRA every N seconds (configurable via `jira_poll_interval` config)
+- Builds JQL query based on config filters, fetches tickets, upserts to database
+- Emits `jira-sync-complete` Tauri event to notify frontend after each sync
+
+### Background Task Pattern
+- Function signature: `pub async fn start_jira_sync(app: AppHandle)`
+- Spawned with: `tauri::async_runtime::spawn(async move { start_jira_sync(app_handle).await; })`
+- Runs indefinitely in loop: read config → build JQL → fetch → upsert → emit event → sleep
+- Access managed state via `app.state::<Mutex<Database>>()`
+- Emit events via `app.emit("event-name", payload)`
+
+### JQL Query Builder
+- `build_jql_query(config)` combines multiple filters with AND:
+  - `filter_assigned_to_me=true` → `assignee = currentUser()`
+  - `jira_board_id` set → `project = {board_id}`
+  - `exclude_done_tickets=true` → `status != Done`
+  - `custom_jql` → appended as-is
+- Always appends `ORDER BY updated DESC` for consistent ordering
+- Empty filters → returns just `ORDER BY updated DESC` (all tickets)
+
+### JIRA Status Mapping
+- Maps JIRA status names to cockpit status enum:
+  - "To Do" → "todo"
+  - "In Progress" → "in_progress"
+  - "In Review" | "Code Review" → "in_review"
+  - "Testing" | "QA" → "testing"
+  - "Done" | "Closed" → "done"
+  - Unknown → "todo" (default fallback)
+- Function: `map_jira_status_to_cockpit(jira_status: &str) -> &'static str`
+
+### Database Integration
+- Added `Database::upsert_ticket()` method to db.rs
+- Uses `INSERT OR REPLACE` for idempotent upserts
+- 8 parameters: id, title, description, status, jira_status, assignee, created_at, updated_at
+- Timestamps stored as Unix epoch (i64)
+- Added `jira_base_url` to default config (13 total config keys now)
+
+### Config Keys Used
+```
+jira_api_token      - JIRA API token for authentication
+jira_base_url       - JIRA instance URL (e.g., https://example.atlassian.net)
+jira_board_id       - Project key for filtering (e.g., "PROJ")
+jira_username       - Email for HTTP Basic Auth
+filter_assigned_to_me - Boolean (true/false string)
+exclude_done_tickets  - Boolean (true/false string)
+custom_jql          - Additional JQL to append
+jira_poll_interval  - Seconds between polls (default: 60)
+```
+
+### Error Handling Strategy
+- Logs errors to stderr with `eprintln!` (no crash)
+- Config read errors → sleep 60s and retry
+- Missing required config → skip sync, sleep, retry
+- JIRA API errors → log and retry next cycle
+- Individual ticket upsert errors → log and continue with next ticket
+- Event emit errors → log but don't stop sync
+- Graceful degradation: sync loop never crashes
+
+### Tauri Event Pattern
+- Event name: `jira-sync-complete`
+- Payload: `()` (empty, frontend just needs notification)
+- Emitted after successful sync (even if some tickets failed)
+- Frontend listens with: `await listen('jira-sync-complete', () => { refreshKanban(); })`
+
+### Testing
+- 3 unit tests covering:
+  - JQL query builder with all filters enabled
+  - JQL query builder with no filters
+  - JIRA status to cockpit status mapping
+- All tests pass: `cargo test` shows 16 passed (3 new + 13 existing)
+
+### Key Learnings
+1. **Background tasks in Tauri**: Use `tauri::async_runtime::spawn()` in setup hook
+2. **AppHandle for state access**: Clone app handle before moving into async block
+3. **Infinite loop pattern**: `loop { ... sleep(Duration::from_secs(n)).await; }`
+4. **Config as strings**: Boolean config stored as "true"/"false" strings, parse with `== "true"`
+5. **Graceful error handling**: Log and continue, never crash the sync loop
+6. **Tauri events**: Use `app.emit(event_name, payload)` to notify frontend
+7. **Database locking**: Lock database only for duration of operation, release ASAP
+8. **JQL construction**: Use Vec<String> and join with " AND " for clean query building
+
+### Integration Notes
+- Module imported in main.rs: `mod jira_sync;`
+- Task spawned in setup hook after database and OpenCode initialization
+- Requires JiraClient (created in task), Database (managed state), AppHandle (for events)
+- Sync starts immediately on app launch (first poll happens after reading config)
+- No Tauri commands needed (fully autonomous background task)
+
+### Dependencies
+- No new dependencies added (all required deps already present)
+- Uses: tokio::time::{sleep, Duration}, tauri::{AppHandle, Emitter, Manager}
+
+### Next Steps
+- Task 2.3: Tauri commands for manual JIRA operations (fetch single ticket, transition status)
+- Task 2.4: Frontend UI to display synced tickets in Kanban board
+- Task 2.5: Settings UI to configure JIRA credentials and filters
+- Future: Add manual sync trigger command (don't wait for next poll)
+- Future: Add sync status indicator (last sync time, error state)
+
