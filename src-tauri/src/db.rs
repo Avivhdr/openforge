@@ -416,6 +416,21 @@ impl Database {
         Ok(())
     }
 
+    pub fn delete_task(&self, id: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM agent_logs WHERE session_id IN (SELECT id FROM agent_sessions WHERE ticket_id = ?1)", rusqlite::params![id])?;
+        conn.execute(
+            "DELETE FROM agent_sessions WHERE ticket_id = ?1",
+            rusqlite::params![id],
+        )?;
+        conn.execute(
+            "DELETE FROM pull_requests WHERE ticket_id = ?1",
+            rusqlite::params![id],
+        )?;
+        conn.execute("DELETE FROM tasks WHERE id = ?1", rusqlite::params![id])?;
+        Ok(())
+    }
+
     pub fn update_task_jira_info(
         &self,
         jira_key: &str,

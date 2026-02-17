@@ -1,8 +1,8 @@
 <script lang="ts">
   import type { Task, PrComment, KanbanColumn } from '../lib/types'
   import { COLUMNS, COLUMN_LABELS } from '../lib/types'
-  import { activeSessions } from '../lib/stores'
-  import { abortSession, updateTaskStatus } from '../lib/ipc'
+  import { tasks, selectedTaskId, activeSessions } from '../lib/stores'
+  import { abortSession, updateTaskStatus, deleteTask, getTasks } from '../lib/ipc'
   import LogViewer from './LogViewer.svelte'
   import CheckpointPanel from './CheckpointPanel.svelte'
   import PrCommentsPanel from './PrCommentsPanel.svelte'
@@ -35,10 +35,21 @@
     return new Date(timestamp * 1000).toLocaleDateString()
   }
 
+  async function handleDelete() {
+    try {
+      await deleteTask(task.id)
+      $selectedTaskId = null
+      $tasks = await getTasks()
+    } catch (e) {
+      console.error('Failed to delete task:', e)
+    }
+  }
+
   async function handleStatusChange(newStatus: KanbanColumn) {
     if (newStatus === task.status) return
     try {
       await updateTaskStatus(task.id, newStatus)
+      $tasks = await getTasks()
     } catch (e) {
       console.error('Failed to update status:', e)
     }
@@ -115,7 +126,10 @@
             {/each}
           </div>
         </div>
-        <button class="btn btn-edit" on:click={() => dispatch('edit')}>Edit Task</button>
+        <div class="action-row">
+          <button class="btn btn-edit" on:click={() => dispatch('edit')}>Edit Task</button>
+          <button class="btn btn-delete" on:click={handleDelete}>Delete</button>
+        </div>
         {#if session}
           <div class="field">
             <span class="label">Agent</span>
@@ -310,6 +324,23 @@
 
   .btn-edit:hover {
     opacity: 0.9;
+  }
+
+  .btn-delete {
+    background: transparent;
+    color: var(--error);
+    border: 1px solid var(--error);
+    align-self: flex-start;
+  }
+
+  .btn-delete:hover {
+    background: var(--error);
+    color: white;
+  }
+
+  .action-row {
+    display: flex;
+    gap: 8px;
   }
 
   .status-actions {

@@ -148,6 +148,17 @@ async fn update_task_status(
     db.update_task_status(&id, &status)
         .map_err(|e| format!("Failed to update task status: {}", e))
 }
+
+#[tauri::command]
+async fn delete_task(
+    db: State<'_, Mutex<db::Database>>,
+    id: String,
+) -> Result<(), String> {
+    let db = db.lock().unwrap();
+    db.delete_task(&id)
+        .map_err(|e| format!("Failed to delete task: {}", e))
+}
+
 #[tauri::command]
 async fn refresh_jira_info(
     db: State<'_, Mutex<db::Database>>,
@@ -699,6 +710,7 @@ fn main() {
             create_task,
             update_task,
             update_task_status,
+            delete_task,
             refresh_jira_info,
             poll_pr_comments_now,
             get_pull_requests,

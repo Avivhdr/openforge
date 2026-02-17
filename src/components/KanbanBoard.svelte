@@ -2,7 +2,7 @@
   import type { Task, AgentSession, KanbanColumn } from '../lib/types'
   import { COLUMNS, COLUMN_LABELS } from '../lib/types'
   import { tasks, selectedTaskId, activeSessions, ticketPrs, error } from '../lib/stores'
-  import { startTicketImplementation, updateTaskStatus, getTasks } from '../lib/ipc'
+  import { startTicketImplementation, updateTaskStatus, deleteTask, getTasks } from '../lib/ipc'
   import TaskCard from './TaskCard.svelte'
   import AddTaskInline from './AddTaskInline.svelte'
 
@@ -62,6 +62,21 @@
       $error = String(err)
     }
   }
+
+  async function handleDelete() {
+    const taskId = contextMenu.taskId
+    closeContextMenu()
+    try {
+      await deleteTask(taskId)
+      if ($selectedTaskId === taskId) {
+        $selectedTaskId = null
+      }
+      $tasks = await getTasks()
+    } catch (err: unknown) {
+      console.error('Failed to delete task:', err)
+      $error = String(err)
+    }
+  }
 </script>
 
 <svelte:window on:click={closeContextMenu} />
@@ -106,6 +121,8 @@
         {/each}
       </div>
     {/if}
+    <div class="context-divider"></div>
+    <button class="context-item context-delete" on:click={handleDelete}>Delete</button>
   </div>
 {/if}
 
@@ -212,5 +229,20 @@
     border-top: 1px solid var(--border);
     margin-top: 2px;
     padding-top: 2px;
+  }
+
+  .context-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 4px 0;
+  }
+
+  .context-delete {
+    color: var(--error);
+  }
+
+  .context-delete:hover {
+    background: var(--error);
+    color: white;
   }
 </style>
