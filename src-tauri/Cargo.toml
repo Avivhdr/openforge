@@ -1,0 +1,22 @@
+[package]
+name = "ai-command-center"
+version = "0.0.1"
+description = "AI Command Center - Desktop application for managing AI workflows"
+authors = ["OpenCode"]
+edition = "2021"
+rust-version = "1.60"
+
+[build-dependencies]
+tauri-build = { version = "2.0", features = [] }
+
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+tauri = "2.8"
+tokio = { version = "1", features = ["full"] }
+
+[features]
+# This feature is used for production builds where `devPath` points to the filesystem
+# and CORS is enabled; `dev` builds to `http://localhost:1420` by default
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
