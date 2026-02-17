@@ -7,6 +7,8 @@ export interface Ticket {
   assignee: string | null;
   created_at: number;
   updated_at: number;
+  acceptance_criteria: string | null;
+  plan_text: string | null;
 }
 
 export interface AgentSession {
@@ -57,6 +59,11 @@ export interface OpenCodeStatus {
   api_url: string;
   healthy: boolean;
   version: string | null;
+}
+
+export interface OpenCodeEvent {
+  event_type: string;
+  data: string;
 }
 
 export type KanbanColumn = "todo" | "in_progress" | "in_review" | "testing" | "done";

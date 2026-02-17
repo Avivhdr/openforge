@@ -76,3 +76,11 @@ export async function getConfig(key: string): Promise<string | null> {
 export async function setConfig(key: string, value: string): Promise<void> {
   return invoke("set_config", { key, value });
 }
+
+export async function getTicketDetail(ticketId: string): Promise<Ticket> {
+  return invoke<Ticket>("get_ticket_detail", { ticketId });
+}
+
+export async function updateTicketFields(ticketId: string, acceptanceCriteria: string, planText: string): Promise<void> {
+  return invoke("update_ticket_fields", { ticketId, acceptanceCriteria, planText });
+}

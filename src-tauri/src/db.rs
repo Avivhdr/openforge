@@ -14,6 +14,8 @@ pub struct TicketRow {
     pub assignee: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
+    pub acceptance_criteria: Option<String>,
+    pub plan_text: Option<String>,
 }
 
 /// Pull request row from database
@@ -213,6 +215,13 @@ impl Database {
             )?;
         }
 
+        // Add new editable ticket fields (silently ignore if already exists)
+        let _ = conn.execute(
+            "ALTER TABLE tickets ADD COLUMN acceptance_criteria TEXT",
+            [],
+        );
+        let _ = conn.execute("ALTER TABLE tickets ADD COLUMN plan_text TEXT", []);
+
         Ok(())
     }
 
@@ -268,8 +277,15 @@ impl Database {
     ) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT OR REPLACE INTO tickets (id, title, description, status, jira_status, assignee, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            "INSERT INTO tickets (id, title, description, status, jira_status, assignee, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+             ON CONFLICT(id) DO UPDATE SET
+               title = excluded.title,
+               description = excluded.description,
+               status = excluded.status,
+               jira_status = excluded.jira_status,
+               assignee = excluded.assignee,
+               updated_at = excluded.updated_at",
             [
                 id,
                 title,
@@ -288,7 +304,7 @@ impl Database {
     pub fn get_all_tickets(&self) -> Result<Vec<TicketRow>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, title, description, status, jira_status, assignee, created_at, updated_at FROM tickets ORDER BY updated_at DESC"
+            "SELECT id, title, description, status, jira_status, assignee, created_at, updated_at, acceptance_criteria, plan_text FROM tickets ORDER BY updated_at DESC"
         )?;
 
         let tickets = stmt.query_map([], |row| {
@@ -301,6 +317,8 @@ impl Database {
                 assignee: row.get(5)?,
                 created_at: row.get(6)?,
                 updated_at: row.get(7)?,
+                acceptance_criteria: row.get(8)?,
+                plan_text: row.get(9)?,
             })
         })?;
 
@@ -616,7 +634,7 @@ impl Database {
     pub fn get_ticket(&self, id: &str) -> Result<Option<TicketRow>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, title, description, status, jira_status, assignee, created_at, updated_at FROM tickets WHERE id = ?1",
+            "SELECT id, title, description, status, jira_status, assignee, created_at, updated_at, acceptance_criteria, plan_text FROM tickets WHERE id = ?1",
         )?;
         let mut rows = stmt.query([id])?;
         if let Some(row) = rows.next()? {
@@ -629,6 +647,8 @@ impl Database {
                 assignee: row.get(5)?,
                 created_at: row.get(6)?,
                 updated_at: row.get(7)?,
+                acceptance_criteria: row.get(8)?,
+                plan_text: row.get(9)?,
             }))
         } else {
             Ok(None)

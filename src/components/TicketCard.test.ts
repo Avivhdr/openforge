@@ -12,6 +12,8 @@ const baseTicket: Ticket = {
   assignee: 'Alice',
   created_at: 1000,
   updated_at: 2000,
+  acceptance_criteria: null,
+  plan_text: null,
 }
 
 describe('TicketCard', () => {
