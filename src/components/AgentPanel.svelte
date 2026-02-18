@@ -102,7 +102,7 @@
       let existingSession = $activeSessions.get(taskId)
       if (!existingSession) {
         const dbSession = await getLatestSession(taskId)
-        if (dbSession && (dbSession.status === 'completed' || dbSession.status === 'failed')) {
+        if (dbSession && (dbSession.status === 'completed' || dbSession.status === 'failed' || dbSession.status === 'paused')) {
           const updated = new Map($activeSessions)
           updated.set(taskId, dbSession)
           $activeSessions = updated
