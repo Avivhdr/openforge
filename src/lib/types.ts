@@ -8,6 +8,7 @@ export interface Task {
   jira_assignee: string | null;
   acceptance_criteria: string | null;
   plan_text: string | null;
+  project_id: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -65,6 +66,44 @@ export interface OpenCodeStatus {
 export interface OpenCodeEvent {
   event_type: string;
   data: string;
+}
+
+export interface Project {
+  id: string;
+  name: string;
+  path: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface WorktreeInfo {
+  id: number;
+  task_id: string;
+  project_id: string;
+  repo_path: string;
+  worktree_path: string;
+  branch_name: string;
+  opencode_port: number | null;
+  opencode_pid: number | null;
+  status: string;
+  created_at: number;
+  updated_at: number;
+}
+
+
+
+export interface AgentEvent {
+  task_id: string;
+  event_type: string;
+  data: string;
+  timestamp: number;
+}
+
+export interface ImplementationStatus {
+  task_id: string;
+  worktree_path: string;
+  port: number;
+  session_id: string;
 }
 
 export type KanbanColumn = "todo" | "in_progress" | "in_review" | "testing" | "done";

@@ -165,10 +165,10 @@ async fn delete_task(
 async fn create_project(
     db: State<'_, Mutex<db::Database>>,
     name: String,
-    repos_root_path: String,
+    path: String,
 ) -> Result<db::ProjectRow, String> {
     let db = db.lock().unwrap();
-    db.create_project(&name, &repos_root_path)
+    db.create_project(&name, &path)
         .map_err(|e| format!("Failed to create project: {}", e))
 }
 
@@ -186,10 +186,10 @@ async fn update_project(
     db: State<'_, Mutex<db::Database>>,
     id: String,
     name: String,
-    repos_root_path: String,
+    path: String,
 ) -> Result<(), String> {
     let db = db.lock().unwrap();
-    db.update_project(&id, &name, &repos_root_path)
+    db.update_project(&id, &name, &path)
         .map_err(|e| format!("Failed to update project: {}", e))
 }
 

@@ -318,7 +318,7 @@ Max Concurrent: 2 (Wave 1)
   - Files: `src-tauri/src/git_worktree.rs`, `src-tauri/src/main.rs`
   - Pre-commit: `cargo build && cargo test`
 
-- [ ] 3. Update Tauri command params in main.rs (`repos_root_path` → `path`)
+- [x] 3. Update Tauri command params in main.rs (`repos_root_path` → `path`)
 
   **What to do**:
   - In `create_project` Tauri command (main.rs:165-173): rename parameter `repos_root_path: String` → `path: String`, update call to `db.create_project(&name, &path)`
@@ -374,7 +374,7 @@ Max Concurrent: 2 (Wave 1)
 
   **Commit**: NO (groups with Task 4 + 5)
 
-- [ ] 4. Update frontend types.ts + ipc.ts — rename field, remove scanRepos/RepoInfo
+- [x] 4. Update frontend types.ts + ipc.ts — rename field, remove scanRepos/RepoInfo
 
   **What to do**:
   - In `src/lib/types.ts`:
@@ -443,7 +443,7 @@ Max Concurrent: 2 (Wave 1)
 
   **Commit**: NO (groups with Task 3 + 5)
 
-- [ ] 5. Update components + App.svelte — delete RepoPickerDialog, bypass repo picker
+- [x] 5. Update components + App.svelte — delete RepoPickerDialog, bypass repo picker
 
   **What to do**:
   - **Delete** `src/components/RepoPickerDialog.svelte` entirely (267 lines)

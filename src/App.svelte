@@ -2,30 +2,57 @@
   import { onMount, onDestroy } from 'svelte'
   import { listen } from '@tauri-apps/api/event'
   import type { UnlistenFn } from '@tauri-apps/api/event'
-  import { tasks, selectedTaskId, activeSessions, ticketPrs, error, isLoading } from './lib/stores'
-  import { getTasks, getOpenCodeStatus, getSessionStatus, checkOpenCodeInstalled, getPullRequests } from './lib/ipc'
-  import type { Task, PullRequestInfo, OpenCodeStatus, PrComment } from './lib/types'
+  import { tasks, selectedTaskId, activeSessions, ticketPrs, error, isLoading, projects, activeProjectId } from './lib/stores'
+  import { getProjects, getTasksForProject, getOpenCodeStatus, getPullRequests, startImplementation } from './lib/ipc'
+  import type { Task, PullRequestInfo, OpenCodeStatus } from './lib/types'
   import KanbanBoard from './components/KanbanBoard.svelte'
-  import DetailPanel from './components/DetailPanel.svelte'
+  import TaskDetailView from './components/TaskDetailView.svelte'
   import AddTaskDialog from './components/AddTaskDialog.svelte'
   import SettingsPanel from './components/SettingsPanel.svelte'
   import Toast from './components/Toast.svelte'
+  import ProjectSwitcher from './components/ProjectSwitcher.svelte'
+  import ProjectSetupDialog from './components/ProjectSetupDialog.svelte'
+
 
   let openCodeStatus: OpenCodeStatus | null = null
   let unlisteners: UnlistenFn[] = []
   let showSettings = false
-  let prComments: PrComment[] = []
-  let openCodeInstalled: boolean | null = null
   let showAddDialog = false
   let editingTask: Task | null = null
   let dialogMode: 'create' | 'edit' = 'create'
+  let showProjectSetup = false
 
   $: selectedTask = $tasks.find(t => t.id === $selectedTaskId) || null
 
+  // Reload tasks when active project changes
+  $: if ($activeProjectId) {
+    loadTasks()
+    loadPullRequests()
+  }
+
+  // Find active project
+  $: activeProject = $projects.find(p => p.id === $activeProjectId) || null
+
+  async function loadProjects() {
+    try {
+      $projects = await getProjects()
+      if ($projects.length > 0 && !$activeProjectId) {
+        $activeProjectId = $projects[0].id
+      }
+      if ($projects.length === 0) {
+        showProjectSetup = true
+      }
+    } catch (e) {
+      console.error('Failed to load projects:', e)
+      $error = String(e)
+    }
+  }
+
   async function loadTasks() {
+    if (!$activeProjectId) return
     $isLoading = true
     try {
-      $tasks = await getTasks()
+      $tasks = await getTasksForProject($activeProjectId)
     } catch (e) {
       console.error('Failed to load tasks:', e)
       $error = String(e)
@@ -57,16 +84,27 @@
     }
   }
 
-  onMount(async () => {
-    try {
-      const installStatus = await checkOpenCodeInstalled()
-      openCodeInstalled = installStatus.installed
-    } catch {
-      openCodeInstalled = false
+  async function handleStartImplementation(event: CustomEvent<{ taskId: string }>) {
+    if (!activeProject) {
+      $error = 'No active project selected'
+      return
     }
+    try {
+      await startImplementation(event.detail.taskId, activeProject.path)
+      await loadTasks()
+    } catch (e) {
+      console.error('Failed to start implementation:', e)
+      $error = String(e)
+    }
+  }
 
-    await loadTasks()
-    await loadPullRequests()
+  function handleProjectCreated() {
+    showProjectSetup = false
+    loadProjects()
+  }
+
+  onMount(async () => {
+    await loadProjects()
     await checkOpenCode()
 
     unlisteners.push(
@@ -76,25 +114,20 @@
     )
 
     unlisteners.push(
-      await listen<{ ticket_id: string; session_id: string; stage: string; data: unknown }>('checkpoint-reached', async (event) => {
-        try {
-          const session = await getSessionStatus(event.payload.session_id)
-          $activeSessions = new Map($activeSessions).set(session.ticket_id, session)
-        } catch (e) {
-          console.error('Failed to get session status:', e)
-        }
+      await listen('implementation-complete', () => {
+        loadTasks()
       })
     )
 
     unlisteners.push(
-      await listen<{ ticket_id: string; session_id: string; stage: string }>('stage-completed', async (event) => {
-        try {
-          const session = await getSessionStatus(event.payload.session_id)
-          $activeSessions = new Map($activeSessions).set(session.ticket_id, session)
-          await loadTasks()
-        } catch (e) {
-          console.error('Failed to get session status:', e)
-        }
+      await listen('implementation-failed', () => {
+        loadTasks()
+      })
+    )
+
+    unlisteners.push(
+      await listen('worktree-cleaned', () => {
+        loadTasks()
       })
     )
 
@@ -122,6 +155,7 @@
 <div class="app">
   <header class="top-bar">
     <h1 class="app-title">AI Command Center</h1>
+    <ProjectSwitcher on:new-project={() => showProjectSetup = true} />
     <div class="status-bar">
       <button class="settings-btn" on:click={() => showSettings = !showSettings}>
         {showSettings ? 'Board' : 'Settings'}
@@ -140,38 +174,30 @@
     </div>
   </header>
 
-  {#if openCodeInstalled === false}
-    <div class="setup-banner">
-      <strong>OpenCode CLI not found.</strong>
-      Install it to enable AI agent features:
-      <code>curl -fsSL https://opencode.ai/install | bash</code>
-      <button class="dismiss-btn" on:click={() => openCodeInstalled = null}>Dismiss</button>
-    </div>
-  {/if}
-
   <main class="main-content">
     {#if showSettings}
-      <SettingsPanel on:close={() => showSettings = false} />
+      <SettingsPanel on:close={() => showSettings = false} on:project-deleted={loadProjects} />
+    {:else if selectedTask}
+      <TaskDetailView task={selectedTask} />
     {:else}
-      <div class="board-area" class:has-detail={selectedTask !== null}>
+      <div class="board-area">
         {#if $isLoading && $tasks.length === 0}
           <div class="loading-overlay">
             <div class="spinner"></div>
             <span>Loading tasks...</span>
           </div>
         {:else}
-          <KanbanBoard />
+          <KanbanBoard on:start-implementation={handleStartImplementation} />
         {/if}
       </div>
-      {#if selectedTask}
-        <div class="detail-area">
-          <DetailPanel task={selectedTask} comments={prComments} on:close={() => $selectedTaskId = null} on:edit={() => { editingTask = selectedTask; dialogMode = 'edit'; showAddDialog = true }} />
-        </div>
-      {/if}
     {/if}
 
     {#if showAddDialog}
       <AddTaskDialog mode={dialogMode} task={editingTask} on:close={() => { showAddDialog = false; editingTask = null }} on:task-saved={() => { showAddDialog = false; editingTask = null; loadTasks() }} />
+    {/if}
+
+    {#if showProjectSetup}
+      <ProjectSetupDialog on:close={() => showProjectSetup = false} on:project-created={handleProjectCreated} />
     {/if}
   </main>
 </div>
@@ -274,16 +300,6 @@
     overflow: hidden;
   }
 
-  .board-area.has-detail {
-    flex: 1;
-  }
-
-  .detail-area {
-    width: 400px;
-    flex-shrink: 0;
-    overflow: hidden;
-  }
-
   .settings-btn {
     all: unset;
     padding: 4px 12px;
@@ -297,36 +313,6 @@
   .settings-btn:hover {
     color: var(--text-primary);
     border-color: var(--accent);
-  }
-
-  .setup-banner {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 10px 20px;
-    background: var(--warning);
-    color: var(--bg-primary);
-    font-size: 0.8rem;
-    flex-shrink: 0;
-  }
-
-  .setup-banner code {
-    background: rgba(0, 0, 0, 0.15);
-    padding: 2px 8px;
-    border-radius: 4px;
-    font-size: 0.75rem;
-  }
-
-  .dismiss-btn {
-    all: unset;
-    margin-left: auto;
-    cursor: pointer;
-    font-size: 0.75rem;
-    opacity: 0.7;
-  }
-
-  .dismiss-btn:hover {
-    opacity: 1;
   }
 
   .loading-overlay {

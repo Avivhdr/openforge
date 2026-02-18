@@ -102,3 +102,112 @@ if repos_root_path_exists {
 - Did NOT modify `main.rs` (as instructed) - that will be handled by Task 2
 - Did NOT touch `worktrees.repo_path` column (different field)
 - Migration is idempotent - safe to run multiple times
+
+## Task 3: Tauri Command Parameter Rename (2026-02-18)
+
+### What Was Done
+Renamed `repos_root_path` parameter to `path` in two Tauri commands:
+- `create_project` (main.rs:165-173)
+- `update_project` (main.rs:185-194)
+
+Updated corresponding db method calls to use `&path` instead of `&repos_root_path`.
+
+### Key Insights
+1. **Serde Parameter Mapping**: Tauri's `invoke()` matches JSON keys to Rust parameter names via serde. Renaming the Rust parameter from `repos_root_path` to `path` means the frontend must send `{ path: "..." }` instead of `{ reposRootPath: "..." }`.
+
+2. **Dependency Chain**: This task unblocks Task 4 (frontend types/IPC) because the frontend now knows the exact parameter names to send.
+
+3. **Isolation**: Changes were strictly isolated to main.rs. The `start_implementation` command was intentionally left unchanged (still uses `repo_path: String` — different field).
+
+4. **Build Success**: Cargo build completed successfully with no errors (only pre-existing warnings).
+
+### Verification Evidence
+- Grep: 0 remaining `repos_root_path` references in main.rs
+- Build: `cargo build` exit code 0
+- Code inspection: Both commands updated correctly with proper parameter names and db calls
+
+### Lessons for Future Tasks
+- Parameter renames in Tauri commands have cascading effects on frontend IPC calls
+- Always verify the full dependency chain before making changes
+- Isolation is critical: only modify what's necessary for the task
+
+## Task 4 - Frontend Types & IPC Update (2026-02-18)
+
+### What Was Done
+Updated `src/lib/types.ts` and `src/lib/ipc.ts` to rename `repos_root_path` → `path` and remove `scanRepos`/`RepoInfo`.
+
+**Files Modified:**
+- `src/lib/types.ts`: Renamed `Project.repos_root_path` → `Project.path`, deleted `RepoInfo` interface
+- `src/lib/ipc.ts`: Removed `RepoInfo` import, updated `createProject()`/`updateProject()` params to `path`, deleted `scanRepos()` function
+- `src/components/RepoPickerDialog.svelte`: Deleted (necessary to unblock build)
+- `src/App.svelte`: Removed RepoPickerDialog import/usage, updated `handleStartImplementation()` to call `startImplementation()` directly with `activeProject.path`
+
+### Critical Insight: Plan Dependency Issue
+The plan had an ordering problem: Task 4 deletes `scanRepos` from ipc.ts, but `RepoPickerDialog.svelte` (assigned to Task 5) imports `scanRepos`. This creates a build failure between tasks.
+
+**Resolution:** To satisfy Task 4's QA requirement ("Frontend compiles after type/IPC changes"), I also deleted `RepoPickerDialog.svelte` and updated `App.svelte`. This is a minimal fix that:
+1. Unblocks the build (required by QA scenarios)
+2. Aligns with the overall goal (removing repo picker)
+3. Implements the null guard for `activeProject` (flagged by Metis as a risk)
+
+### Verification Results
+✓ `npm run build`: SUCCESS (exit 0)
+✓ `npm run test`: 54 tests passed
+✓ Zero occurrences of `RepoInfo`, `scanRepos`, `reposRootPath`/`repos_root_path` in frontend code
+
+### Key Learnings
+1. **Serde Matching**: TypeScript interface field names must match Rust serde output exactly. `repos_root_path` → `path` ensures the field doesn't become `undefined` at runtime.
+2. **IPC Invoke Keys**: Frontend invoke calls must match Rust parameter names. `{ name, path }` maps to Rust `name: String, path: String`.
+3. **Build Blocking**: Deleting exported functions (like `scanRepos`) immediately breaks any component that imports them. Plan dependencies must account for this.
+4. **Null Guards**: The `if (!activeProject)` guard is essential when accessing `activeProject.path` — prevents runtime errors if no project is selected.
+
+### Recommendation for Future Tasks
+When a task deletes exported functions/types, verify that no other components import them before the task that deletes those components. Consider reordering tasks or marking intermediate builds as "expected to fail" if dependencies can't be resolved.
+
+## Task 5 Continuation - Component UI Updates (2026-02-18)
+
+### What Was Done
+Completed the final frontend cleanup by updating two components to use the new `path` variable and simplified UI labels:
+
+**ProjectSetupDialog.svelte:**
+- Renamed variable: `reposRootPath` → `path`
+- Updated validation: `!path.trim()`
+- Updated createProject call: `createProject(projectName.trim(), path.trim())`
+- Updated label: "Repositories Root Path" → "Repository Path"
+- Updated placeholder: "/Users/you/workspace" → "/Users/you/workspace/my-project"
+- Updated button disabled condition: `!path.trim()`
+
+**SettingsPanel.svelte:**
+- Renamed variable: `reposRootPath` → `path`
+- Updated reactive assignment: `currentProject?.path` (was `repos_root_path`)
+- Updated updateProject call: `updateProject($activeProjectId, projectName, path)`
+- Updated label: "Repos Root Path" → "Repository Path"
+- Updated placeholder: "/path/to/repos" → "/path/to/repo"
+
+### Verification Results
+✓ `npm run build`: SUCCESS (58 modules transformed, built in 918ms)
+✓ `npm run test`: SUCCESS (7 test files, 54 tests passed)
+✓ `grep -c "reposRootPath|repos_root_path"`: 0 matches in both files
+
+### Key Insights
+1. **Type Alignment**: The `Project` interface in `types.ts` already had `path: string` (added in Task 4), so the reactive assignment `currentProject?.path` works correctly without LSP errors after rebuild.
+
+2. **UI Label Semantics**: Changing "Repositories Root Path" → "Repository Path" and placeholder from "/Users/you/workspace" → "/Users/you/workspace/my-project" correctly reflects the new model: each project points to a single repo, not a parent folder containing multiple repos.
+
+3. **Placeholder Consistency**: ProjectSetupDialog uses full path example ("/Users/you/workspace/my-project"), while SettingsPanel uses generic path ("/path/to/repo"). Both are appropriate for their context.
+
+4. **Variable Naming**: Using `path` instead of `reposRootPath` is clearer and aligns with the backend `Project.path` field.
+
+### Scope Boundaries Respected
+- ✅ Did NOT touch ProjectSwitcher.svelte
+- ✅ Did NOT touch JIRA/GitHub config sections
+- ✅ Did NOT add new dialogs or validation logic
+- ✅ Did NOT touch any other components
+
+### Task Completion Status
+Task 5 continuation is COMPLETE. All three tasks (3, 4, 5) are now ready for commit:
+- Task 3: Rust command parameters renamed
+- Task 4: Frontend types/IPC updated, RepoPickerDialog deleted, App.svelte updated
+- Task 5: ProjectSetupDialog and SettingsPanel UI labels and variables updated
+
+The entire "remove-subfolder-scanning" refactor is now complete across backend and frontend.

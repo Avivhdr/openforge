@@ -1,66 +1,81 @@
 <script lang="ts">
-  import { onMount } from 'svelte'
-  import { getConfig, setConfig } from '../lib/ipc'
   import { createEventDispatcher } from 'svelte'
+  import { activeProjectId, projects } from '../lib/stores'
+  import { getProjectConfig, setProjectConfig, updateProject, deleteProject } from '../lib/ipc'
 
   const dispatch = createEventDispatcher()
 
+  let projectName = ''
+  let path = ''
   let jiraBaseUrl = ''
   let jiraUsername = ''
   let jiraApiToken = ''
   let jiraBoardId = ''
-  let filterAssignedToMe = true
-  let excludeDoneTickets = true
-  let customJql = ''
   let githubToken = ''
   let githubDefaultRepo = ''
-  let opencodePort = '4096'
-  let jiraPollInterval = '60'
-  let githubPollInterval = '30'
   let isSaving = false
   let saved = false
+  let isDeleting = false
 
-  onMount(async () => {
+  $: if ($activeProjectId) {
+    loadConfig($activeProjectId)
+  }
+
+  $: currentProject = $projects.find((p: typeof $projects[0]) => p.id === $activeProjectId)
+  $: projectName = currentProject?.name || ''
+  $: path = currentProject?.path || ''
+
+  async function loadConfig(projectId: string) {
     try {
-      jiraBaseUrl = (await getConfig('jira_base_url')) || ''
-      jiraUsername = (await getConfig('jira_username')) || ''
-      jiraApiToken = (await getConfig('jira_api_token')) || ''
-      jiraBoardId = (await getConfig('jira_board_id')) || ''
-      filterAssignedToMe = (await getConfig('filter_assigned_to_me')) !== 'false'
-      excludeDoneTickets = (await getConfig('exclude_done_tickets')) !== 'false'
-      customJql = (await getConfig('custom_jql')) || ''
-      githubToken = (await getConfig('github_token')) || ''
-      githubDefaultRepo = (await getConfig('github_default_repo')) || ''
-      opencodePort = (await getConfig('opencode_port')) || '4096'
-      jiraPollInterval = (await getConfig('jira_poll_interval')) || '60'
-      githubPollInterval = (await getConfig('github_poll_interval')) || '30'
+      jiraBaseUrl = (await getProjectConfig(projectId, 'jira_base_url')) || ''
+      jiraUsername = (await getProjectConfig(projectId, 'jira_username')) || ''
+      jiraApiToken = (await getProjectConfig(projectId, 'jira_api_token')) || ''
+      jiraBoardId = (await getProjectConfig(projectId, 'jira_board_id')) || ''
+      githubToken = (await getProjectConfig(projectId, 'github_token')) || ''
+      githubDefaultRepo = (await getProjectConfig(projectId, 'github_default_repo')) || ''
     } catch (e) {
       console.error('Failed to load settings:', e)
     }
-  })
+  }
 
   async function save() {
+    if (!$activeProjectId) return
+
     isSaving = true
     saved = false
     try {
-      await setConfig('jira_base_url', jiraBaseUrl)
-      await setConfig('jira_username', jiraUsername)
-      await setConfig('jira_api_token', jiraApiToken)
-      await setConfig('jira_board_id', jiraBoardId)
-      await setConfig('filter_assigned_to_me', filterAssignedToMe ? 'true' : 'false')
-      await setConfig('exclude_done_tickets', excludeDoneTickets ? 'true' : 'false')
-      await setConfig('custom_jql', customJql)
-      await setConfig('github_token', githubToken)
-      await setConfig('github_default_repo', githubDefaultRepo)
-      await setConfig('opencode_port', opencodePort)
-      await setConfig('jira_poll_interval', jiraPollInterval)
-      await setConfig('github_poll_interval', githubPollInterval)
+      await updateProject($activeProjectId, projectName, path)
+      await setProjectConfig($activeProjectId, 'jira_base_url', jiraBaseUrl)
+      await setProjectConfig($activeProjectId, 'jira_username', jiraUsername)
+      await setProjectConfig($activeProjectId, 'jira_api_token', jiraApiToken)
+      await setProjectConfig($activeProjectId, 'jira_board_id', jiraBoardId)
+      await setProjectConfig($activeProjectId, 'github_token', githubToken)
+      await setProjectConfig($activeProjectId, 'github_default_repo', githubDefaultRepo)
       saved = true
       setTimeout(() => { saved = false }, 2000)
     } catch (e) {
       console.error('Failed to save settings:', e)
     } finally {
       isSaving = false
+    }
+  }
+
+  async function handleDelete() {
+    if (!$activeProjectId) return
+
+    const confirmed = confirm(`Are you sure you want to delete project "${projectName}"? This action cannot be undone.`)
+    if (!confirmed) return
+
+    isDeleting = true
+    try {
+      await deleteProject($activeProjectId)
+      dispatch('project-deleted')
+      close()
+    } catch (e) {
+      console.error('Failed to delete project:', e)
+      alert('Failed to delete project: ' + e)
+    } finally {
+      isDeleting = false
     }
   }
 
@@ -71,78 +86,71 @@
 
 <div class="settings">
   <div class="settings-header">
-    <h2>Settings</h2>
+    <h2>Settings for: {projectName || 'No Project'}</h2>
     <button class="close-btn" on:click={close}>X</button>
   </div>
 
-  <div class="settings-body">
-    <section class="section">
-      <h3>JIRA</h3>
-      <p class="section-note">Sync updates linked task info only (read-only)</p>
-      <label class="field">
-        <span>Base URL</span>
-        <input type="text" bind:value={jiraBaseUrl} placeholder="https://your-domain.atlassian.net" />
-      </label>
-      <label class="field">
-        <span>Email / Username</span>
-        <input type="text" bind:value={jiraUsername} placeholder="your@email.com" />
-      </label>
-      <label class="field">
-        <span>API Token</span>
-        <input type="password" bind:value={jiraApiToken} placeholder="Your JIRA API token" />
-      </label>
-      <label class="field">
-        <span>Project / Board ID</span>
-        <input type="text" bind:value={jiraBoardId} placeholder="e.g. PROJ" />
-      </label>
-      <label class="checkbox">
-        <input type="checkbox" bind:checked={filterAssignedToMe} />
-        <span>Only show tickets assigned to me</span>
-      </label>
-      <label class="checkbox">
-        <input type="checkbox" bind:checked={excludeDoneTickets} />
-        <span>Exclude Done tickets</span>
-      </label>
-      <label class="field">
-        <span>Custom JQL (advanced)</span>
-        <input type="text" bind:value={customJql} placeholder="Additional JQL filter" />
-      </label>
-      <label class="field">
-        <span>Poll Interval (seconds)</span>
-        <input type="number" bind:value={jiraPollInterval} min="10" />
-      </label>
-    </section>
+  {#if !$activeProjectId}
+    <div class="no-project">
+      <p>Please select a project first</p>
+    </div>
+  {:else}
+    <div class="settings-body">
+      <section class="section">
+        <h3>Project</h3>
+        <label class="field">
+          <span>Project Name</span>
+          <input type="text" bind:value={projectName} placeholder="My Project" />
+        </label>
+         <label class="field">
+           <span>Repository Path</span>
+           <input type="text" bind:value={path} placeholder="/path/to/repo" />
+         </label>
+        <button class="btn btn-delete" on:click={handleDelete} disabled={isDeleting}>
+          {#if isDeleting}Deleting...{:else}Delete Project{/if}
+        </button>
+      </section>
 
-    <section class="section">
-      <h3>GitHub</h3>
-      <label class="field">
-        <span>Personal Access Token</span>
-        <input type="password" bind:value={githubToken} placeholder="ghp_..." />
-      </label>
-      <label class="field">
-        <span>Default Repository</span>
-        <input type="text" bind:value={githubDefaultRepo} placeholder="owner/repo" />
-      </label>
-      <label class="field">
-        <span>Poll Interval (seconds)</span>
-        <input type="number" bind:value={githubPollInterval} min="10" />
-      </label>
-    </section>
+      <section class="section">
+        <h3>JIRA</h3>
+        <p class="section-note">Sync updates linked task info only (read-only)</p>
+        <label class="field">
+          <span>Base URL</span>
+          <input type="text" bind:value={jiraBaseUrl} placeholder="https://your-domain.atlassian.net" />
+        </label>
+        <label class="field">
+          <span>Email / Username</span>
+          <input type="text" bind:value={jiraUsername} placeholder="your@email.com" />
+        </label>
+        <label class="field">
+          <span>API Token</span>
+          <input type="password" bind:value={jiraApiToken} placeholder="Your JIRA API token" />
+        </label>
+        <label class="field">
+          <span>Project / Board ID</span>
+          <input type="text" bind:value={jiraBoardId} placeholder="e.g. PROJ" />
+        </label>
+      </section>
 
-    <section class="section">
-      <h3>OpenCode</h3>
-      <label class="field">
-        <span>Port</span>
-        <input type="number" bind:value={opencodePort} min="1024" max="65535" />
-      </label>
-    </section>
-  </div>
+      <section class="section">
+        <h3>GitHub</h3>
+        <label class="field">
+          <span>Personal Access Token</span>
+          <input type="password" bind:value={githubToken} placeholder="ghp_..." />
+        </label>
+        <label class="field">
+          <span>Default Repository</span>
+          <input type="text" bind:value={githubDefaultRepo} placeholder="owner/repo" />
+        </label>
+      </section>
+    </div>
 
-  <div class="settings-footer">
-    <button class="btn btn-save" on:click={save} disabled={isSaving}>
-      {#if isSaving}Saving...{:else if saved}Saved!{:else}Save Settings{/if}
-    </button>
-  </div>
+    <div class="settings-footer">
+      <button class="btn btn-save" on:click={save} disabled={isSaving}>
+        {#if isSaving}Saving...{:else if saved}Saved!{:else}Save Settings{/if}
+      </button>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -277,5 +285,24 @@
   .btn-save {
     background: var(--accent);
     color: var(--bg-primary);
+  }
+
+  .btn-delete {
+    background: var(--error);
+    color: var(--text-primary);
+    margin-top: 8px;
+  }
+
+  .no-project {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+  }
+
+  .no-project p {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
   }
 </style>
