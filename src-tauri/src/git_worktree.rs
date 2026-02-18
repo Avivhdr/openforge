@@ -195,6 +195,14 @@ pub async fn remove_worktree(
     repo_path: &Path,
     worktree_path: &Path,
 ) -> Result<(), GitWorktreeError> {
+    remove_worktree_with_branch(repo_path, worktree_path, None).await
+}
+
+pub async fn remove_worktree_with_branch(
+    repo_path: &Path,
+    worktree_path: &Path,
+    branch_name: Option<&str>,
+) -> Result<(), GitWorktreeError> {
     let lock = acquire_lock(repo_path);
     let _guard = lock.lock().await;
 
@@ -253,6 +261,22 @@ pub async fn remove_worktree(
     if !prune_output.status.success() {
         let stderr = String::from_utf8_lossy(&prune_output.stderr);
         println!("Warning: worktree prune failed: {}", stderr);
+    }
+
+    if let Some(branch) = branch_name {
+        let branch_output = Command::new("git")
+            .arg("-C")
+            .arg(repo_path)
+            .arg("branch")
+            .arg("-D")
+            .arg(branch)
+            .output()
+            .await?;
+
+        if !branch_output.status.success() {
+            let stderr = String::from_utf8_lossy(&branch_output.stderr);
+            println!("Warning: branch delete failed for {}: {}", branch, stderr);
+        }
     }
 
     Ok(())
