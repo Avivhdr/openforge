@@ -162,3 +162,19 @@ export async function getFileContent(owner: string, repo: string, sha: string): 
 export async function getFileAtRef(owner: string, repo: string, path: string, refSha: string): Promise<string> {
   return invoke<string>("get_file_at_ref", { owner, repo, path, refSha });
 }
+
+export async function spawnPty(taskId: string, serverPort: number, opencodeSessionId: string, cols: number, rows: number): Promise<void> {
+  return invoke("pty_spawn", { taskId, serverPort, opencodeSessionId, cols, rows });
+}
+
+export async function writePty(taskId: string, data: string): Promise<void> {
+  return invoke("pty_write", { taskId, data });
+}
+
+export async function resizePty(taskId: string, cols: number, rows: number): Promise<void> {
+  return invoke("pty_resize", { taskId, cols, rows });
+}
+
+export async function killPty(taskId: string): Promise<void> {
+  return invoke("pty_kill", { taskId });
+}

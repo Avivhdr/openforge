@@ -157,6 +157,20 @@ export interface PrFileDiff {
 /** App-level view for top-bar navigation */
 export type AppView = "board" | "pr_review" | "settings";
 
+export interface PtySpawnRequest {
+  task_id: string;
+  server_port: number;
+  opencode_session_id: string;
+  cols: number;
+  rows: number;
+}
+
+export interface PtyEvent {
+  task_id: string;
+  data: string;
+}
+
+
 export type KanbanColumn = "todo" | "in_progress" | "in_review" | "testing" | "done";
 
 export const COLUMN_LABELS: Record<KanbanColumn, string> = {
