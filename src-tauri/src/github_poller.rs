@@ -605,4 +605,60 @@ mod tests {
         assert_eq!(matched.len(), 1);
         assert_eq!(matched[0], "T-7");
     }
+
+    #[test]
+    fn test_read_project_config_returns_github_default_repo() {
+        use crate::db::Database;
+        use std::fs;
+
+        let temp_dir = std::env::temp_dir();
+        let db_path = temp_dir.join("test_poller_config.db");
+        let _ = fs::remove_file(&db_path);
+
+        let db = Database::new(db_path.clone()).expect("Failed to create database");
+
+        let project = db
+            .create_project("Test Project", "/tmp/test")
+            .expect("Failed to create project");
+
+        db.set_project_config(&project.id, "github_default_repo", "owner/repo")
+            .expect("Failed to set github_default_repo");
+
+        let db_mutex = Mutex::new(db);
+
+        let config = read_project_config(&db_mutex, &project.id)
+            .expect("Failed to read config")
+            .expect("Config should not be None");
+
+        assert_eq!(config.project_id, project.id);
+        assert_eq!(config.github_default_repo, "owner/repo");
+
+        drop(db_mutex);
+        let _ = fs::remove_file(&db_path);
+    }
+
+    #[test]
+    fn test_read_project_config_returns_none_when_no_repo_set() {
+        use crate::db::Database;
+        use std::fs;
+
+        let temp_dir = std::env::temp_dir();
+        let db_path = temp_dir.join("test_poller_no_repo.db");
+        let _ = fs::remove_file(&db_path);
+
+        let db = Database::new(db_path.clone()).expect("Failed to create database");
+
+        let project = db
+            .create_project("Test Project", "/tmp/test")
+            .expect("Failed to create project");
+
+        let db_mutex = Mutex::new(db);
+
+        let config = read_project_config(&db_mutex, &project.id).expect("Failed to read config");
+
+        assert!(config.is_none());
+
+        drop(db_mutex);
+        let _ = fs::remove_file(&db_path);
+    }
 }
