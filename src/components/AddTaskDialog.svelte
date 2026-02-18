@@ -1,6 +1,5 @@
 <script lang="ts">
   import type { Task, KanbanColumn } from '../lib/types'
-  import { COLUMNS, COLUMN_LABELS } from '../lib/types'
   import { createTask, updateTask } from '../lib/ipc'
   import { activeProjectId } from '../lib/stores'
 
@@ -98,17 +97,6 @@
           placeholder="e.g. PROJ-123"
         />
       </label>
-
-      {#if mode === 'create'}
-        <label class="field">
-          <span>Status</span>
-          <select bind:value={status}>
-            {#each COLUMNS as col}
-              <option value={col}>{COLUMN_LABELS[col]}</option>
-            {/each}
-          </select>
-        </label>
-      {/if}
     </form>
 
     <div class="dialog-footer">
@@ -208,8 +196,7 @@
     color: var(--error);
   }
 
-  .field input,
-  .field select {
+  .field input {
     background: var(--bg-primary);
     border: 1px solid var(--border);
     border-radius: 4px;
@@ -220,13 +207,8 @@
     font-family: inherit;
   }
 
-  .field input:focus,
-  .field select:focus {
+  .field input:focus {
     border-color: var(--accent);
-  }
-
-  .field select {
-    cursor: pointer;
   }
 
   .dialog-footer {

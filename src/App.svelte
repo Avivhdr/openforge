@@ -343,6 +343,17 @@
     <div class="top-bar-left">
       <h1 class="app-title">AI Command Center</h1>
       <ProjectSwitcher onNewProject={() => showProjectSetup = true} />
+      <button 
+        type="button"
+        class="add-task-btn"
+        onclick={() => {
+          dialogMode = 'create'
+          editingTask = null
+          showAddDialog = true
+        }}
+      >
+        + Add Task
+      </button>
     </div>
     
     <nav class="view-switcher">
@@ -505,6 +516,30 @@
     color: var(--text-primary);
     margin: 0;
     letter-spacing: 0.02em;
+  }
+
+  .add-task-btn {
+    all: unset;
+    padding: 8px 14px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--bg-primary);
+    background: var(--accent);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .add-task-btn:hover {
+    background: #8ab3f8;
+    box-shadow: 0 2px 8px rgba(122, 162, 247, 0.3);
+  }
+
+  .add-task-btn:active {
+    transform: scale(0.98);
   }
 
   .view-switcher {

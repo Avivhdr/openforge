@@ -104,8 +104,9 @@ describe('AddTaskDialog', () => {
     expect(screen.queryByText('Status')).toBeNull()
   })
 
-  it('shows status dropdown in create mode', () => {
+  it('does not show status dropdown in create mode', () => {
     render(AddTaskDialog, { props: { mode: 'create' } })
-    expect(screen.getByText('Status')).toBeTruthy()
+    expect(screen.queryByText('Status')).toBeNull()
+    expect(screen.queryByRole('combobox')).toBeNull()
   })
 })

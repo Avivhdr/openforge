@@ -5,7 +5,6 @@
   import { updateTaskStatus, deleteTask } from '../lib/ipc'
   import { loadActions, getEnabledActions } from '../lib/actions'
   import TaskCard from './TaskCard.svelte'
-  import AddTaskInline from './AddTaskInline.svelte'
 
   interface Props {
     onRunAction?: (data: { taskId: string; actionPrompt: string; agent: string | null }) => void
@@ -23,10 +22,6 @@
 
   function handleSelect(taskId: string) {
     $selectedTaskId = taskId
-  }
-
-  async function handleTaskCreated() {
-    // Task reload handled by task-changed event in App.svelte
   }
 
   let contextMenu = $state({ visible: false, x: 0, y: 0, taskId: '', showMoveSubmenu: false })
@@ -93,13 +88,12 @@
   {#each COLUMNS as column}
     {@const columnTasks = tasksForColumn($tasks, column)}
     <div class="column">
-      <div class="column-header">
-        <span class="column-name">{COLUMN_LABELS[column]}</span>
-        <div class="column-header-right">
-          <span class="column-count">{columnTasks.length}</span>
-          <AddTaskInline {column} onTaskCreated={handleTaskCreated} />
-        </div>
-      </div>
+       <div class="column-header">
+         <span class="column-name">{COLUMN_LABELS[column]}</span>
+         <div class="column-header-right">
+           <span class="column-count">{columnTasks.length}</span>
+         </div>
+       </div>
       <div class="column-body">
         {#each columnTasks as task (task.id)}
           <div oncontextmenu={(e: MouseEvent) => handleContextMenu(e, task.id)}>
