@@ -63,6 +63,10 @@ export async function startImplementation(taskId: string, repoPath: string): Pro
   return invoke<ImplementationStatus>("start_implementation", { taskId, repoPath });
 }
 
+export async function runAction(taskId: string, repoPath: string, actionPrompt: string): Promise<ImplementationStatus> {
+  return invoke<ImplementationStatus>("run_action", { taskId, repoPath, actionPrompt });
+}
+
 export async function abortImplementation(taskId: string): Promise<void> {
   return invoke("abort_implementation", { taskId });
 }
