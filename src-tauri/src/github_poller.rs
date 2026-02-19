@@ -142,6 +142,8 @@ pub async fn poll_github_once(app: &AppHandle, github_client: &GitHubClient) -> 
 
     let project_count = projects.len();
     let mut total_new_comments = 0;
+    let mut total_ci_changes = 0;
+    let mut total_review_changes = 0;
     let mut total_errors = 0;
 
     for project in projects {
@@ -199,7 +201,7 @@ pub async fn poll_github_once(app: &AppHandle, github_client: &GitHubClient) -> 
         };
 
         let poll_start = Instant::now();
-        let (new_comments, errors) =
+        let (new_comments, ci_changes, review_changes, errors) =
             poll_prs_for_project(github_client, &db, app, &github_token, open_prs).await;
         println!(
             "[GitHub Poller] PR polling for project {} took {:.1}s",
@@ -207,6 +209,8 @@ pub async fn poll_github_once(app: &AppHandle, github_client: &GitHubClient) -> 
             poll_start.elapsed().as_secs_f64()
         );
         total_new_comments += new_comments;
+        total_ci_changes += ci_changes;
+        total_review_changes += review_changes;
         total_errors += errors;
     }
 
@@ -236,8 +240,8 @@ pub async fn poll_github_once(app: &AppHandle, github_client: &GitHubClient) -> 
 
     PollResult {
         new_comments: total_new_comments,
-        ci_changes: 0,
-        review_changes: 0,
+        ci_changes: total_ci_changes,
+        review_changes: total_review_changes,
         pr_changes: 0,
         errors: total_errors,
     }
@@ -591,6 +595,7 @@ struct PollSinglePrResult {
     pr_title: String,
     head_sha: String,
     old_ci_status: Option<String>,
+    old_review_status: Option<String>,
     comments: Vec<PrComment>,
     check_runs: Option<CheckRunsResponse>,
     combined_status: Option<CombinedStatusResponse>,
@@ -605,6 +610,7 @@ async fn poll_single_pr(
     pr: PrRow,
     since: Option<String>,
     old_ci_status: Option<String>,
+    old_review_status: Option<String>,
 ) -> PollSinglePrResult {
     let since_ref = since.as_deref();
 
@@ -621,6 +627,7 @@ async fn poll_single_pr(
                 pr_title: pr.title,
                 head_sha: pr.head_sha,
                 old_ci_status,
+                old_review_status,
                 comments: vec![],
                 check_runs: None,
                 combined_status: None,
@@ -697,6 +704,7 @@ async fn poll_single_pr(
         pr_title: pr.title,
         head_sha: pr.head_sha,
         old_ci_status,
+        old_review_status,
         comments,
         check_runs,
         combined_status,
@@ -712,26 +720,27 @@ async fn poll_prs_for_project(
     app: &AppHandle,
     github_token: &str,
     open_prs: Vec<PrRow>,
-) -> (usize, usize) {
+) -> (usize, usize, usize, usize) {
     if open_prs.is_empty() {
-        return (0, 0);
+        return (0, 0, 0, 0);
     }
 
-    let pr_metadata: Vec<(i64, Option<i64>, Option<String>)> = {
+    let pr_metadata: Vec<(i64, Option<i64>, Option<String>, Option<String>)> = {
         let db_lock = db.lock().unwrap();
         open_prs
             .iter()
             .map(|pr| {
                 let last_polled = db_lock.get_pr_last_polled(pr.id).ok().flatten();
                 let old_ci = db_lock.get_pr_ci_status(pr.id).ok().flatten();
-                (pr.id, last_polled, old_ci)
+                let old_review = db_lock.get_pr_review_status(pr.id).ok().flatten();
+                (pr.id, last_polled, old_ci, old_review)
             })
             .collect()
     };
 
     let since_map: HashMap<i64, Option<String>> = pr_metadata
         .iter()
-        .map(|(pr_id, last_polled, _)| {
+        .map(|(pr_id, last_polled, _, _)| {
             let since = last_polled.map(|ts| {
                 chrono::DateTime::from_timestamp(ts, 0)
                     .map(|dt| dt.format("%Y-%m-%dT%H:%M:%SZ").to_string())
@@ -742,8 +751,13 @@ async fn poll_prs_for_project(
         .collect();
 
     let old_ci_map: HashMap<i64, Option<String>> = pr_metadata
+        .iter()
+        .map(|(pr_id, _, old_ci, _)| (*pr_id, old_ci.clone()))
+        .collect();
+
+    let old_review_map: HashMap<i64, Option<String>> = pr_metadata
         .into_iter()
-        .map(|(pr_id, _, old_ci)| (pr_id, old_ci))
+        .map(|(pr_id, _, _, old_review)| (pr_id, old_review))
         .collect();
 
     let futures: Vec<_> = open_prs
@@ -753,7 +767,8 @@ async fn poll_prs_for_project(
             let token = github_token.to_string();
             let since = since_map.get(&pr.id).cloned().flatten();
             let old_ci = old_ci_map.get(&pr.id).cloned().flatten();
-            poll_single_pr(client, token, pr, since, old_ci)
+            let old_review = old_review_map.get(&pr.id).cloned().flatten();
+            poll_single_pr(client, token, pr, since, old_ci, old_review)
         })
         .collect();
 
@@ -765,6 +780,8 @@ async fn poll_prs_for_project(
         .as_secs() as i64;
 
     let mut new_comment_count = 0;
+    let mut ci_change_count = 0;
+    let mut review_change_count = 0;
     let mut error_count = 0;
 
     let db_lock = db.lock().unwrap();
@@ -836,7 +853,7 @@ async fn poll_prs_for_project(
                 db_lock.update_pr_ci_status(result.pr_id, &result.head_sha, &new_status, &check_runs_json)
             {
                 eprintln!("[GitHub Poller] Failed to update CI status for PR #{}: {}", result.pr_id, e);
-            } else if result.old_ci_status.as_deref() != Some("failure") && new_status == "failure" {
+            } else if result.old_ci_status.as_deref() != Some(new_status.as_str()) {
                 if let Err(e) = app.emit(
                     "ci-status-changed",
                     serde_json::json!({
@@ -849,6 +866,7 @@ async fn poll_prs_for_project(
                 ) {
                     eprintln!("[GitHub Poller] Failed to emit ci-status-changed event: {}", e);
                 }
+                ci_change_count += 1;
             }
         }
 
@@ -856,6 +874,20 @@ async fn poll_prs_for_project(
             let review_status = aggregate_review_status(reviews, result.has_requested_reviewers);
             if let Err(e) = db_lock.update_pr_review_status(result.pr_id, &review_status) {
                 eprintln!("[GitHub Poller] Failed to update review status for PR #{}: {}", result.pr_id, e);
+            } else if result.old_review_status.as_deref() != Some(review_status.as_str()) {
+                if let Err(e) = app.emit(
+                    "review-status-changed",
+                    serde_json::json!({
+                        "task_id": result.ticket_id,
+                        "pr_id": result.pr_id,
+                        "pr_title": result.pr_title,
+                        "review_status": review_status,
+                        "timestamp": now
+                    }),
+                ) {
+                    eprintln!("[GitHub Poller] Failed to emit review-status-changed event: {}", e);
+                }
+                review_change_count += 1;
             }
         }
 
@@ -866,7 +898,7 @@ async fn poll_prs_for_project(
 
     drop(db_lock);
 
-    (new_comment_count, error_count)
+    (new_comment_count, ci_change_count, review_change_count, error_count)
 }
 
 async fn poll_review_prs(
