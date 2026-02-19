@@ -58,6 +58,7 @@ pub struct PrRow {
     pub head_sha: String,
     pub ci_status: Option<String>,
     pub ci_check_runs: Option<String>,
+    pub review_status: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -463,6 +464,25 @@ impl Database {
         if !last_polled_at_exists {
             conn.execute(
                 "ALTER TABLE pull_requests ADD COLUMN last_polled_at INTEGER DEFAULT 0",
+                [],
+            )?;
+        }
+
+        // ============================================================================
+        // Migration: Add review_status column to pull_requests table
+        // ============================================================================
+        let review_status_exists: bool = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('pull_requests') WHERE name='review_status'",
+            [],
+            |row| {
+                let count: i64 = row.get(0)?;
+                Ok(count > 0)
+            },
+        )?;
+
+        if !review_status_exists {
+            conn.execute(
+                "ALTER TABLE pull_requests ADD COLUMN review_status TEXT",
                 [],
             )?;
         }
@@ -1147,7 +1167,7 @@ impl Database {
     pub fn get_open_prs(&self) -> Result<Vec<PrRow>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, ticket_id, repo_owner, repo_name, title, url, state, head_sha, ci_status, ci_check_runs, created_at, updated_at 
+            "SELECT id, ticket_id, repo_owner, repo_name, title, url, state, head_sha, ci_status, ci_check_runs, review_status, created_at, updated_at 
              FROM pull_requests 
              WHERE state = 'open' 
              ORDER BY updated_at DESC"
@@ -1165,8 +1185,9 @@ impl Database {
                 head_sha: row.get(7)?,
                 ci_status: row.get(8)?,
                 ci_check_runs: row.get(9)?,
-                created_at: row.get(10)?,
-                updated_at: row.get(11)?,
+                review_status: row.get(10)?,
+                created_at: row.get(11)?,
+                updated_at: row.get(12)?,
             })
         })?;
 
@@ -1180,7 +1201,7 @@ impl Database {
     pub fn get_all_pull_requests(&self) -> Result<Vec<PrRow>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, ticket_id, repo_owner, repo_name, title, url, state, head_sha, ci_status, ci_check_runs, created_at, updated_at
+            "SELECT id, ticket_id, repo_owner, repo_name, title, url, state, head_sha, ci_status, ci_check_runs, review_status, created_at, updated_at
              FROM pull_requests
              ORDER BY updated_at DESC",
         )?;
@@ -1197,8 +1218,9 @@ impl Database {
                 head_sha: row.get(7)?,
                 ci_status: row.get(8)?,
                 ci_check_runs: row.get(9)?,
-                created_at: row.get(10)?,
-                updated_at: row.get(11)?,
+                review_status: row.get(10)?,
+                created_at: row.get(11)?,
+                updated_at: row.get(12)?,
             })
         })?;
 
@@ -1324,6 +1346,15 @@ impl Database {
         } else {
             Ok(None)
         }
+    }
+
+    pub fn update_pr_review_status(&self, pr_id: i64, review_status: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE pull_requests SET review_status = ?1 WHERE id = ?2",
+            rusqlite::params![review_status, pr_id],
+        )?;
+        Ok(())
     }
 
     /// Get existing comment IDs for a PR as a HashSet for efficient batch lookups
