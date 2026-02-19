@@ -930,6 +930,59 @@ impl GitHubClient {
 
         Ok(())
     }
+
+    /// Get reviews for a pull request
+    ///
+    /// Fetches all reviews to determine approval/changes-requested state.
+    ///
+    /// # Arguments
+    /// * `owner` - Repository owner
+    /// * `repo` - Repository name
+    /// * `pr_number` - Pull request number
+    /// * `token` - GitHub Personal Access Token
+    ///
+    /// # Returns
+    /// Vector of PrReview with review state per reviewer
+    pub async fn get_pr_reviews(
+        &self,
+        owner: &str,
+        repo: &str,
+        pr_number: i64,
+        token: &str,
+    ) -> Result<Vec<PrReview>, GitHubError> {
+        let url = format!(
+            "https://api.github.com/repos/{}/{}/pulls/{}/reviews?per_page=100",
+            owner, repo, pr_number
+        );
+
+        let response = self
+            .client
+            .get(&url)
+            .header("Authorization", format!("token {}", token))
+            .header("User-Agent", "ai-command-center")
+            .send()
+            .await
+            .map_err(|e| GitHubError::NetworkError(e.to_string()))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unable to read response body".to_string());
+            return Err(GitHubError::ApiError {
+                status: status.as_u16(),
+                message: body,
+            });
+        }
+
+        let reviews: Vec<PrReview> = response
+            .json()
+            .await
+            .map_err(|e| GitHubError::ParseError(e.to_string()))?;
+
+        Ok(reviews)
+    }
 }
 
 /// Aggregate CI status from check runs and commit status
@@ -977,6 +1030,54 @@ pub fn aggregate_ci_status(
     }
 
     "success".to_string()
+}
+
+/// Aggregate review status from PR reviews and requested reviewers
+///
+/// Determines the overall review status by examining submitted reviews.
+/// Returns one of: "approved", "changes_requested", "review_required", or "none".
+pub fn aggregate_review_status(
+    reviews: &[PrReview],
+    has_requested_reviewers: bool,
+) -> String {
+    if reviews.is_empty() && !has_requested_reviewers {
+        return "none".to_string();
+    }
+
+    // Build effective review state per reviewer (latest actionable review wins)
+    let mut effective: std::collections::HashMap<&str, &str> = std::collections::HashMap::new();
+    for review in reviews {
+        match review.state.as_str() {
+            "APPROVED" | "CHANGES_REQUESTED" | "DISMISSED" => {
+                effective.insert(&review.user.login, &review.state);
+            }
+            _ => {}
+        }
+    }
+
+    // Check if any reviewer requested changes (and hasn't since approved)
+    for state in effective.values() {
+        if *state == "CHANGES_REQUESTED" {
+            return "changes_requested".to_string();
+        }
+    }
+
+    // If there are still pending reviewers, reviews are required
+    if has_requested_reviewers {
+        return "review_required".to_string();
+    }
+
+    // If at least one approval exists and no changes requested
+    if effective.values().any(|s| *s == "APPROVED") {
+        return "approved".to_string();
+    }
+
+    // Reviews exist but none are actionable (all COMMENTED/PENDING)
+    if !reviews.is_empty() {
+        return "review_required".to_string();
+    }
+
+    "none".to_string()
 }
 
 impl Default for GitHubClient {
@@ -1179,6 +1280,18 @@ struct BlobResponse {
     encoding: String,
     #[serde(flatten)]
     extra: serde_json::Value,
+}
+
+/// PR review from GitHub API
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct PrReview {
+    pub id: i64,
+    pub user: GitHubUser,
+    pub state: String,
+    #[serde(default)]
+    pub submitted_at: Option<String>,
+    #[serde(flatten)]
+    pub extra: serde_json::Value,
 }
 
 /// Check runs response from GitHub API

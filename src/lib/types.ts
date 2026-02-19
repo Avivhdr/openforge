@@ -63,6 +63,7 @@ export interface PullRequestInfo {
   head_sha: string;
   ci_status: string | null;
   ci_check_runs: string | null;
+  review_status: string | null;
   created_at: number;
   updated_at: number;
 }

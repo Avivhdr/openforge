@@ -239,6 +239,28 @@
     </section>
   {/if}
 
+  <!-- Review Status Section -->
+  {#if taskPrs.some(pr => pr.review_status && pr.review_status !== 'none')}
+    <section class="section">
+      <h3 class="section-title">Review Status</h3>
+      {#each taskPrs as pr (pr.id)}
+        {#if pr.review_status && pr.review_status !== 'none'}
+          <div class="pipeline-group">
+            <div class="pipeline-header">
+              <span class="pipeline-pr-name">{pr.title}</span>
+              <span class="pipeline-status-badge review-{pr.review_status}">
+                {#if pr.review_status === 'approved'}✓ Approved
+                {:else if pr.review_status === 'changes_requested'}✗ Changes Requested
+                {:else if pr.review_status === 'review_required'}⏳ Review Required
+                {/if}
+              </span>
+            </div>
+          </div>
+        {/if}
+      {/each}
+    </section>
+  {/if}
+
   <!-- PR Comments Section -->
   {#if taskPrs.length > 0}
     <section class="section">
@@ -591,6 +613,21 @@
   }
 
   .pipeline-none {
+    background: rgba(86, 95, 137, 0.15);
+    color: var(--text-secondary);
+  }
+
+  .review-approved {
+    background: rgba(158, 206, 106, 0.15);
+    color: var(--success);
+  }
+
+  .review-changes_requested {
+    background: rgba(224, 175, 104, 0.15);
+    color: var(--warning);
+  }
+
+  .review-review_required {
     background: rgba(86, 95, 137, 0.15);
     color: var(--text-secondary);
   }

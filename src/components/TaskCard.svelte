@@ -90,7 +90,10 @@
           onkeydown={(e: KeyboardEvent) => { e.stopPropagation(); if (e.key === 'Enter') openUrl(pr.url) }}
         >
           {#if pr.ci_status && pr.ci_status !== 'none'}
-            <span class="ci-dot ci-{pr.ci_status}"></span>
+            <span class="ci-dot ci-{pr.ci_status}" title="CI: {pr.ci_status}"></span>
+          {/if}
+          {#if pr.review_status && pr.review_status !== 'none'}
+            <span class="review-dot review-{pr.review_status}" title="Review: {pr.review_status}"></span>
           {/if}
           PR #{pr.id}
         </span>
@@ -324,6 +327,28 @@
 
   .ci-dot.ci-pending {
     background: var(--warning);
+    animation: ci-pulse 2s ease-in-out infinite;
+  }
+
+  .review-dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    margin-right: 3px;
+    vertical-align: middle;
+  }
+
+  .review-dot.review-approved {
+    background: var(--success);
+  }
+
+  .review-dot.review-changes_requested {
+    background: var(--warning);
+  }
+
+  .review-dot.review-review_required {
+    background: var(--text-secondary);
     animation: ci-pulse 2s ease-in-out infinite;
   }
 

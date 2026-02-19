@@ -36,7 +36,7 @@
 //! - Skips projects with missing GitHub config
 
 use crate::db::{Database, PrRow};
-use crate::github_client::{aggregate_ci_status, CheckRunsResponse, CombinedStatusResponse, GitHubClient, PrComment};
+use crate::github_client::{aggregate_ci_status, aggregate_review_status, CheckRunsResponse, CombinedStatusResponse, GitHubClient, PrComment, PrReview};
 use futures::future::join_all;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -467,6 +467,8 @@ struct PollSinglePrResult {
     comments: Vec<PrComment>,
     check_runs: Option<CheckRunsResponse>,
     combined_status: Option<CombinedStatusResponse>,
+    reviews: Option<Vec<PrReview>>,
+    has_requested_reviewers: bool,
     error: Option<String>,
 }
 
@@ -495,20 +497,31 @@ async fn poll_single_pr(
                 comments: vec![],
                 check_runs: None,
                 combined_status: None,
+                reviews: None,
+                has_requested_reviewers: false,
                 error: Some(format!("Failed to fetch comments: {}", e)),
             };
         }
     };
 
-    let (check_runs_result, combined_status_result) = if pr.head_sha.is_empty() {
-        (None, None)
-    } else {
-        let (cr, cs) = tokio::join!(
-            github_client.get_check_runs(&pr.repo_owner, &pr.repo_name, &pr.head_sha, &github_token),
-            github_client.get_combined_status(&pr.repo_owner, &pr.repo_name, &pr.head_sha, &github_token)
-        );
-        (Some(cr), Some(cs))
+    // Fetch CI status, reviews, and PR details in parallel
+    let ci_future = async {
+        if pr.head_sha.is_empty() {
+            (None, None)
+        } else {
+            let (cr, cs) = tokio::join!(
+                github_client.get_check_runs(&pr.repo_owner, &pr.repo_name, &pr.head_sha, &github_token),
+                github_client.get_combined_status(&pr.repo_owner, &pr.repo_name, &pr.head_sha, &github_token)
+            );
+            (Some(cr), Some(cs))
+        }
     };
+
+    let reviews_future = github_client.get_pr_reviews(&pr.repo_owner, &pr.repo_name, pr.id, &github_token);
+    let pr_details_future = github_client.get_pr_details(&pr.repo_owner, &pr.repo_name, pr.id, &github_token);
+
+    let ((check_runs_result, combined_status_result), reviews_result, pr_details_result) =
+        tokio::join!(ci_future, reviews_future, pr_details_future);
 
     let check_runs = check_runs_result.and_then(|r| match r {
         Ok(cr) => Some(cr),
@@ -526,6 +539,31 @@ async fn poll_single_pr(
         }
     });
 
+    let reviews = match reviews_result {
+        Ok(r) => Some(r),
+        Err(e) => {
+            eprintln!("[GitHub Poller] Failed to fetch reviews for PR #{}: {}", pr.id, e);
+            None
+        }
+    };
+
+    let has_requested_reviewers = match &pr_details_result {
+        Ok(details) => {
+            details.extra.get("requested_reviewers")
+                .and_then(|r| r.as_array())
+                .map(|a| !a.is_empty())
+                .unwrap_or(false)
+            || details.extra.get("requested_teams")
+                .and_then(|r| r.as_array())
+                .map(|a| !a.is_empty())
+                .unwrap_or(false)
+        }
+        Err(e) => {
+            eprintln!("[GitHub Poller] Failed to fetch PR details for PR #{}: {}", pr.id, e);
+            false
+        }
+    };
+
     PollSinglePrResult {
         pr_id: pr.id,
         ticket_id: pr.ticket_id,
@@ -535,6 +573,8 @@ async fn poll_single_pr(
         comments,
         check_runs,
         combined_status,
+        reviews,
+        has_requested_reviewers,
         error: None,
     }
 }
@@ -682,6 +722,13 @@ async fn poll_prs_for_project(
                 ) {
                     eprintln!("[GitHub Poller] Failed to emit ci-status-changed event: {}", e);
                 }
+            }
+        }
+
+        if let Some(reviews) = &result.reviews {
+            let review_status = aggregate_review_status(reviews, result.has_requested_reviewers);
+            if let Err(e) = db_lock.update_pr_review_status(result.pr_id, &review_status) {
+                eprintln!("[GitHub Poller] Failed to update review status for PR #{}: {}", result.pr_id, e);
             }
         }
 
