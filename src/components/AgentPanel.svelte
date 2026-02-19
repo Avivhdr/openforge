@@ -28,12 +28,9 @@
   let resizeObserver: ResizeObserver | null = null
   let resizeTimeout: ReturnType<typeof setTimeout> | null = null
   let visibilityObserver: IntersectionObserver | null = null
-  let ptySpawned = $state(false)
+  let ptySpawned = false
   let terminalMounted = false
   let opencodePort: number | null = null
-  // Non-reactive guard: tracks which opencode session PTY was spawned (or attempted) for.
-  // Prevents $effect retry loops on failure and duplicate spawns across code paths.
-  let spawnedForSessionId: string | null = null
 
   let session = $derived($activeSessions.get(taskId) || null)
   let attachCommand = $derived(session?.opencode_session_id && opencodePort
@@ -50,42 +47,38 @@
     }
   })
 
-  // Auto-spawn PTY when session becomes running and terminal is mounted.
-  // Requires opencode_session_id to be set (may arrive after status becomes 'running').
-  $effect(() => {
-    const sessionId = session?.opencode_session_id
-    if (session && session.status === 'running' && sessionId
-        && terminalContainer && terminal
-        && !ptySpawned && spawnedForSessionId !== sessionId) {
-      spawnPtyForSession()
-    }
-  })
+  // Attach PTY once for the current session. Called from onMount (existing session)
+  // and from the agent-event listener (new session becomes running).
+  async function tryAttachPty() {
+    if (ptySpawned) return
 
-  async function spawnPtyForSession() {
-    const opencodeSessionId = session?.opencode_session_id
-    if (!opencodeSessionId || ptySpawned || spawnedForSessionId === opencodeSessionId) return
-    // Set non-reactive guard immediately to prevent duplicate calls from $effect
-    spawnedForSessionId = opencodeSessionId
+    const currentSession = $activeSessions.get(taskId)
+    const sessionId = currentSession?.opencode_session_id
+    if (!sessionId) return
+
+    ptySpawned = true  // Set synchronously before any await to prevent duplicate calls
 
     try {
       const worktree = await getWorktreeForTask(taskId)
       const port = worktree?.opencode_port
       if (!port) {
         console.error('[AgentPanel] No opencode_port found for task:', taskId)
+        ptySpawned = false
         return
       }
       opencodePort = port
 
-      await mountTerminal()
       await setupPtyListeners()
-
       const cols = terminal?.cols ?? 80
       const rows = terminal?.rows ?? 24
-      await spawnPty(taskId, port, opencodeSessionId, cols, rows)
-      ptySpawned = true
-      status = 'running'
+      await spawnPty(taskId, port, sessionId, cols, rows)
+
+      if (currentSession.status === 'running') {
+        status = 'running'
+      }
     } catch (e) {
-      console.error('[AgentPanel] Failed to spawn PTY:', e)
+      console.error('[AgentPanel] Failed to attach PTY:', e)
+      ptySpawned = false
     }
   }
 
@@ -138,27 +131,6 @@
       console.error('[AgentPanel] Failed to load session history:', e)
     } finally {
       loadingHistory = false
-    }
-
-    // Re-attach PTY after loadingHistory is false so the terminal-wrapper div
-    // is in the DOM and mountTerminal() can open xterm into it.
-    const reattachSession = $activeSessions.get(taskId)
-    const reattachSessionId = reattachSession?.opencode_session_id
-    if (reattachSessionId && !ptySpawned && spawnedForSessionId !== reattachSessionId) {
-      spawnedForSessionId = reattachSessionId
-      try {
-        const worktree = await getWorktreeForTask(taskId)
-        if (worktree?.opencode_port) {
-          opencodePort = worktree.opencode_port
-          await setupPtyListeners()
-          const cols = terminal?.cols ?? 80
-          const rows = terminal?.rows ?? 24
-          await spawnPty(taskId, worktree.opencode_port, reattachSessionId, cols, rows)
-          ptySpawned = true
-        }
-      } catch (e) {
-        console.error('[AgentPanel] Failed to re-attach PTY for completed session:', e)
-      }
     }
   }
 
@@ -268,6 +240,9 @@
 
     await loadSessionHistory()
 
+    // Attach PTY once for whatever session exists at panel open
+    await tryAttachPty()
+
     unlisten = await listen<AgentEvent>('agent-event', (event) => {
       if (event.payload.task_id !== taskId) return
 
@@ -283,11 +258,11 @@
           if (statusType === 'idle') {
             status = 'complete'
           } else if (statusType === 'busy') {
-            console.log('[AgentPanel] Session status busy (running) for task:', taskId)
             status = 'running'
+            tryAttachPty()
           } else if (statusType === 'retry') {
-            console.log('[AgentPanel] Session status retry (running) for task:', taskId)
             status = 'running'
+            tryAttachPty()
           }
         } catch { /* ignore parse errors */ }
       } else if (eventType === 'session.error') {
@@ -321,7 +296,6 @@
         })
         ptySpawned = false
       }
-      spawnedForSessionId = null  // Allow new session to spawn PTY after abort
       await abortImplementation(taskId)
       status = 'error'
       errorMessage = 'Implementation aborted by user'
