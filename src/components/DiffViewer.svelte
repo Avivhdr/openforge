@@ -23,6 +23,48 @@
   let commentText = $state('')
   let fileContentsMap = $state<Map<string, FileContents>>(new Map())
 
+  let collapsedFiles = $state(new Set<string>())
+
+  function getStatusIcon(status: string): string {
+    switch (status) {
+      case 'added': return '+'
+      case 'removed': return '−'
+      case 'modified': return '±'
+      case 'renamed': return '→'
+      default: return '•'
+    }
+  }
+
+  function getStatusColor(status: string): string {
+    switch (status) {
+      case 'added': return 'var(--success)'
+      case 'removed': return 'var(--error)'
+      case 'modified': return 'var(--warning)'
+      case 'renamed': return 'var(--accent)'
+      default: return 'var(--text-secondary)'
+    }
+  }
+
+  function getStatusLabel(status: string): string {
+    switch (status) {
+      case 'added': return 'Added'
+      case 'removed': return 'Deleted'
+      case 'modified': return 'Modified'
+      case 'renamed': return 'Renamed'
+      default: return status
+    }
+  }
+
+  function toggleCollapse(filename: string) {
+    const next = new Set(collapsedFiles)
+    if (next.has(filename)) {
+      next.delete(filename)
+    } else {
+      next.add(filename)
+    }
+    collapsedFiles = next
+  }
+
   let fetchedKeys = new Set<string>()
 
   $effect(() => {
@@ -80,7 +122,26 @@
       <div class="flex items-center justify-center h-full text-base-content/50 text-sm">No files to display</div>
     {:else}
       {#each files as file (file.filename)}
-        <div data-diff-file={file.filename} class="mb-px">
+        <div data-diff-file={file.filename} class="border border-base-300 rounded-md overflow-hidden mb-3">
+          <button class="w-full flex items-center gap-2 px-4 py-3 bg-base-200 hover:bg-base-300 transition-colors cursor-pointer border-b border-base-300" onclick={() => toggleCollapse(file.filename)}>
+            <span class="text-xs text-base-content/50 flex-shrink-0">{collapsedFiles.has(file.filename) ? '▶' : '▼'}</span>
+            <span class="font-bold text-sm" style="color: {getStatusColor(file.status)}">
+              {getStatusIcon(file.status)}
+            </span>
+            <span class="flex-1 overflow-hidden text-ellipsis whitespace-nowrap font-mono text-xs text-base-content" title={file.filename}>
+              {#if file.previous_filename}
+                <span class="text-base-content/50 line-through">{file.previous_filename}</span>
+                <span class="text-primary mx-1">→</span>
+              {/if}
+              {file.filename}
+            </span>
+            <span class="text-xs font-semibold uppercase tracking-wider flex-shrink-0" style="color: {getStatusColor(file.status)}">{getStatusLabel(file.status)}</span>
+            <span class="flex gap-2 text-xs flex-shrink-0">
+              {#if file.additions > 0}<span class="text-success">+{file.additions}</span>{/if}
+              {#if file.deletions > 0}<span class="text-error">−{file.deletions}</span>{/if}
+            </span>
+          </button>
+          {#if !collapsedFiles.has(file.filename)}
           <DiffView
             data={toGitDiffViewData(file, fileContentsMap.get(file.filename))}
             extendData={buildExtendData(file.filename, existingComments, $pendingManualComments)}
@@ -154,6 +215,7 @@
               </div>
             {/snippet}
           </DiffView>
+          {/if}
         </div>
       {/each}
     {/if}
