@@ -8,7 +8,8 @@
     getPrComments, 
     markCommentAddressed, 
     openUrl, 
-    getWorktreeForTask 
+    getWorktreeForTask,
+    getConfig
   } from '../lib/ipc'
   import CopyButton from './CopyButton.svelte'
 
@@ -20,6 +21,8 @@
 
   let worktree = $state<WorktreeInfo | null>(null)
   let prCommentsByPr = $state<Map<number, PrComment[]>>(new Map())
+  let jiraBaseUrl = $state('')
+  let showJiraDetail = $state(false)
 
   async function loadWorktree(taskId: string) {
     try {
@@ -58,8 +61,9 @@
   })
 
 
-  onMount(() => {
+  onMount(async () => {
     loadPrComments()
+    jiraBaseUrl = (await getConfig('jira_base_url')) || ''
   })
 
   async function handleStatusChange(newStatus: KanbanColumn) {
@@ -131,6 +135,24 @@
           <span class="text-sm text-base-content">{task.jira_assignee}</span>
         </div>
       {/if}
+      <div class="flex flex-col gap-2 pt-2">
+        {#if jiraBaseUrl}
+          <button
+            class="btn btn-link btn-xs p-0 h-auto min-h-0 text-primary no-underline hover:underline text-[0.7rem]"
+            onclick={() => openUrl(`${jiraBaseUrl}/browse/${task.jira_key}`)}
+          >
+            Open in Jira
+          </button>
+        {/if}
+        {#if task.jira_description}
+          <button
+            class="btn btn-ghost btn-xs border border-base-300"
+            onclick={() => showJiraDetail = true}
+          >
+            View Jira Details
+          </button>
+        {/if}
+      </div>
     {/if}
 
     <div class="flex flex-col gap-1">
