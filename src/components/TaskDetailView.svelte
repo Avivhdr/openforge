@@ -31,14 +31,6 @@
     $selectedTaskId = null
   }
 
-  function handleEscape(event: KeyboardEvent) {
-    if (event.key === 'Escape') {
-      // Don't navigate back if a dialog or overlay is open
-      if (document.querySelector('[role="dialog"]')) return
-      $selectedTaskId = null
-    }
-  }
-
   function handleSendToAgent(prompt: string) {
     onRunAction({ taskId: task.id, actionPrompt: prompt, agent: null })
   }
@@ -55,8 +47,6 @@
     return status.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
   }
 </script>
-
-<svelte:window onkeydown={handleEscape} />
 
 <div class="task-detail-view">
   <header class="detail-header">
