@@ -12,6 +12,7 @@
     getConfig
   } from '../lib/ipc'
   import CopyButton from './CopyButton.svelte'
+  import JiraDetailModal from './JiraDetailModal.svelte'
 
   interface Props {
     task: Task
@@ -352,11 +353,15 @@
           </div>
         {/if}
       {/each}
-    </section>
-  {/if}
-</div>
+     </section>
+   {/if}
 
-<style>
+   {#if showJiraDetail && task.jira_key}
+     <JiraDetailModal {task} {jiraBaseUrl} onClose={() => showJiraDetail = false} />
+   {/if}
+ </div>
+ 
+ <style>
   @keyframes ready-pulse {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.7; }
