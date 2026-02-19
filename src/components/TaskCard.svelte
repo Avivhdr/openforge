@@ -92,22 +92,23 @@
           onclick={(e: MouseEvent) => { e.stopPropagation(); openUrl(pr.url) }}
           onkeydown={(e: KeyboardEvent) => { e.stopPropagation(); if (e.key === 'Enter') openUrl(pr.url) }}
         >
-          {#if pr.state === 'merged'}
-            <span class="merge-icon" title="Merged">&#x2714;</span>
-          {:else if isReadyToMerge(pr)}
-            <span class="ready-icon" title="Ready to merge">&#x25CF;</span>
-          {:else}
-            {#if pr.ci_status && pr.ci_status !== 'none'}
-              <span class="ci-dot ci-{pr.ci_status}" title="CI: {pr.ci_status}"></span>
-            {/if}
-            {#if pr.review_status && pr.review_status !== 'none'}
-              <span class="review-dot review-{pr.review_status}" title="Review: {pr.review_status}"></span>
-            {/if}
+          {#if pr.ci_status && pr.ci_status !== 'none' && pr.state === 'open'}
+            <span class="ci-dot ci-{pr.ci_status}" title="CI: {pr.ci_status}"></span>
+          {/if}
+          {#if pr.review_status && pr.review_status !== 'none' && pr.state === 'open'}
+            <span class="review-dot review-{pr.review_status}" title="Review: {pr.review_status}"></span>
           {/if}
           PR #{pr.id}
         </span>
       {/each}
     </div>
+    {#each pullRequests as pr}
+      {#if pr.state === 'merged'}
+        <div class="card-merge-status merged">Merged</div>
+      {:else if isReadyToMerge(pr)}
+        <div class="card-merge-status ready">Ready to merge</div>
+      {/if}
+    {/each}
   {/if}
   {#if task.jira_assignee}
     <div class="card-assignee">{task.jira_assignee}</div>
@@ -327,15 +328,24 @@
     color: var(--text-secondary);
   }
 
-  .merge-icon {
-    font-size: 0.6rem;
-    margin-right: 2px;
+  .card-merge-status {
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 4px;
+    margin-top: 4px;
+    text-align: center;
   }
 
-  .ready-icon {
-    font-size: 0.5rem;
-    margin-right: 2px;
-    animation: ci-pulse 2s ease-in-out infinite;
+  .card-merge-status.merged {
+    background: rgba(187, 154, 247, 0.15);
+    color: #bb9af7;
+  }
+
+  .card-merge-status.ready {
+    background: rgba(158, 206, 106, 0.15);
+    color: var(--success);
+    border: 1px solid rgba(158, 206, 106, 0.3);
   }
 
   .ci-dot {
