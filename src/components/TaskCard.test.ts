@@ -307,4 +307,62 @@ describe('TaskCard', () => {
     render(TaskCard, { props: { task: baseTask, pullRequests: [basePr] } })
     expect(document.querySelector('.ci-dot')).toBeNull()
   })
+
+  it('applies ci-failed class when open PR has ci_status failure', () => {
+    const pr = { ...basePr, ci_status: 'failure', state: 'open' }
+    render(TaskCard, { props: { task: baseTask, pullRequests: [pr] } })
+    const card = screen.getByRole('button')
+    expect(card.classList.contains('ci-failed')).toBe(true)
+  })
+
+  it('does not apply ci-failed class when ci_status is success', () => {
+    const pr = { ...basePr, ci_status: 'success', state: 'open' }
+    render(TaskCard, { props: { task: baseTask, pullRequests: [pr] } })
+    const card = screen.getByRole('button')
+    expect(card.classList.contains('ci-failed')).toBe(false)
+  })
+
+  it('does not apply ci-failed class when PR is closed with failure', () => {
+    const pr = { ...basePr, ci_status: 'failure', state: 'closed' }
+    render(TaskCard, { props: { task: baseTask, pullRequests: [pr] } })
+    const card = screen.getByRole('button')
+    expect(card.classList.contains('ci-failed')).toBe(false)
+  })
+
+  it('does not apply ci-failed class when agent is running despite CI failure', () => {
+    const session: AgentSession = {
+      id: 'ses-1',
+      ticket_id: 'T-42',
+      opencode_session_id: null,
+      stage: 'implement',
+      status: 'running',
+      checkpoint_data: null,
+      error_message: null,
+      created_at: 1000,
+      updated_at: 2000,
+    }
+    const pr = { ...basePr, ci_status: 'failure', state: 'open' }
+    render(TaskCard, { props: { task: baseTask, session, pullRequests: [pr] } })
+    const card = screen.getByRole('button')
+    expect(card.classList.contains('ci-failed')).toBe(false)
+    expect(card.classList.contains('running')).toBe(true)
+  })
+
+  it('applies ci-failed class when agent is completed and CI failed', () => {
+    const session: AgentSession = {
+      id: 'ses-1',
+      ticket_id: 'T-42',
+      opencode_session_id: null,
+      stage: 'implement',
+      status: 'completed',
+      checkpoint_data: null,
+      error_message: null,
+      created_at: 1000,
+      updated_at: 2000,
+    }
+    const pr = { ...basePr, ci_status: 'failure', state: 'open' }
+    render(TaskCard, { props: { task: baseTask, session, pullRequests: [pr] } })
+    const card = screen.getByRole('button')
+    expect(card.classList.contains('ci-failed')).toBe(true)
+  })
 })
