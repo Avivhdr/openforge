@@ -34,10 +34,11 @@
   let statusClass = $derived(session?.status || 'idle')
   let needsInput = $derived(session?.status === 'paused' && session?.checkpoint_data !== null)
   let hasVisibleStatus = $derived(session !== null && ['running', 'completed', 'paused', 'failed', 'interrupted'].includes(session?.status ?? ''))
+  let hasCiFailure = $derived(pullRequests.some(pr => pr.ci_status === 'failure' && pr.state === 'open'))
 </script>
 
 <Card
-  class="block px-3 py-2.5 {statusClass === 'running' ? 'running' : ''} {statusClass === 'paused' && !needsInput ? 'paused' : ''} {statusClass === 'failed' ? 'failed' : ''} {statusClass === 'interrupted' ? 'interrupted' : ''} {statusClass === 'completed' ? 'completed' : ''} {needsInput ? 'needs-input' : ''}"
+  class="block px-3 py-2.5 {hasCiFailure && statusClass !== 'running' && !needsInput ? 'ci-failed' : ''} {statusClass === 'running' ? 'running' : ''} {statusClass === 'paused' && !needsInput ? 'paused' : ''} {statusClass === 'failed' ? 'failed' : ''} {statusClass === 'interrupted' ? 'interrupted' : ''} {statusClass === 'completed' ? 'completed' : ''} {needsInput ? 'needs-input' : ''}"
   onclick={handleClick}
 >
   <div class="flex items-center justify-between mb-1">
@@ -155,6 +156,10 @@
     border: 2px solid var(--color-warning);
     background-color: var(--color-base-100);
     animation: border-pulse-warning 2s ease-in-out infinite;
+  }
+  :global(.ci-failed) {
+    border: 2px solid var(--color-error);
+    background-image: linear-gradient(to right, color-mix(in oklch, var(--color-error) 8%, transparent), transparent 40%);
   }
   @keyframes border-pulse-success {
     0%, 100% {
