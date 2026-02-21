@@ -248,7 +248,7 @@
       }
     }
 
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && e.shiftKey) {
       e.preventDefault()
       handleSubmit()
       return
@@ -268,25 +268,27 @@
   }
 </script>
 
-<div class="relative bg-base-100 border border-base-300 rounded-lg shadow-lg">
-  <AutocompletePopover
-    items={autocompleteItems}
-    visible={popoverVisible}
-    selectedIndex={selectedIndex}
-    onSelect={handleSelect}
-    onClose={closePopover}
-  />
+<div class="bg-base-100">
+  <div class="relative">
+    <textarea
+      bind:this={textareaEl}
+      bind:value={textValue}
+      class="w-full resize-none bg-transparent border-none outline-none p-3 text-sm"
+      rows={2}
+      {placeholder}
+      style="max-height: 15rem; overflow-y: auto;"
+      oninput={handleInput}
+      onkeydown={handleKeydown}
+    ></textarea>
 
-  <textarea
-    bind:this={textareaEl}
-    bind:value={textValue}
-    class="w-full resize-none bg-transparent border-none outline-none p-3 text-sm"
-    rows={2}
-    {placeholder}
-    style="max-height: 15rem; overflow-y: auto;"
-    oninput={handleInput}
-    onkeydown={handleKeydown}
-  ></textarea>
+    <AutocompletePopover
+      items={autocompleteItems}
+      visible={popoverVisible}
+      selectedIndex={selectedIndex}
+      onSelect={handleSelect}
+      onClose={closePopover}
+    />
+  </div>
 
   <div class="flex items-center justify-between px-3 pb-2">
     <div class="flex items-center gap-2">
@@ -314,6 +316,6 @@
         >+ Add JIRA key</span>
       {/if}
     </div>
-    <span class="text-xs text-base-content/40">Enter to submit · Shift+Enter for newline</span>
+    <span class="text-xs text-base-content/40">Shift+Enter to submit · Enter for newline</span>
   </div>
 </div>

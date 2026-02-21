@@ -38,7 +38,7 @@
 
 {#if visible && items.length > 0}
   <div
-    class="absolute bottom-full left-0 right-0 z-50 mb-1 bg-base-100 border border-base-300 shadow-lg rounded-lg overflow-hidden max-h-[320px] overflow-y-auto"
+    class="absolute top-full left-0 right-0 z-50 mt-1 bg-base-100 border border-base-300 shadow-lg rounded-lg overflow-hidden max-h-[320px] overflow-y-auto"
     role="listbox"
     aria-label="Autocomplete suggestions"
     onkeydown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); onClose() } }}
