@@ -25,6 +25,7 @@
   let prComments = $state<PrComment[]>([])
   let linkedPr = $state<PullRequestInfo | null>(null)
   let fileTreeVisible = $state(true)
+  let includeUncommitted = $state(false)
   let unlistenAgentEvent: UnlistenFn | null = null
   let debounceTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -40,7 +41,7 @@
     isLoading = true
     error = null
     try {
-      const diffs = await getTaskDiff(task.id)
+      const diffs = await getTaskDiff(task.id, includeUncommitted)
       $selfReviewDiffFiles = diffs
     } catch (e) {
       console.error('Failed to refresh diff:', e)
@@ -63,6 +64,7 @@
       file.filename,
       file.previous_filename,
       file.status,
+      includeUncommitted,
     )
     return { oldContent, newContent }
   }
@@ -77,7 +79,7 @@
     error = null
     try {
       // 1. Load diff
-      const diffs = await getTaskDiff(task.id)
+      const diffs = await getTaskDiff(task.id, includeUncommitted)
       $selfReviewDiffFiles = diffs
 
       // 2. Load active comments and split by type
@@ -154,14 +156,16 @@
         {#if fileTreeVisible}
           <FileTree files={$selfReviewDiffFiles} onSelectFile={handleFileSelect} />
         {/if}
-        <DiffViewer
-          bind:this={diffViewer}
-          files={$selfReviewDiffFiles}
-          existingComments={[]}
-          {fileTreeVisible}
-          onToggleFileTree={() => { fileTreeVisible = !fileTreeVisible }}
-          fetchFileContents={fetchTaskFileContents}
-        />
+        {#key includeUncommitted}
+          <DiffViewer
+            bind:this={diffViewer}
+            files={$selfReviewDiffFiles}
+            existingComments={[]}
+            {fileTreeVisible}
+            onToggleFileTree={() => { fileTreeVisible = !fileTreeVisible }}
+            fetchFileContents={fetchTaskFileContents}
+          />
+        {/key}
         <div class="w-[280px] shrink-0 border-l border-base-300 overflow-hidden flex flex-col">
           {#if linkedPr}
             <div class="border-b border-base-300 shrink-0">
@@ -200,6 +204,15 @@
       </div>
     {/if}
   </div>
+
+  {#if $selfReviewDiffFiles.length > 0}
+    <div class="flex items-center gap-2 px-3 py-1.5 border-t border-base-300 bg-base-200 text-xs">
+      <label class="flex items-center gap-1.5 cursor-pointer">
+        <input type="checkbox" class="checkbox checkbox-xs" bind:checked={includeUncommitted} onchange={handleRefresh} />
+        <span class="text-base-content/70">Include uncommitted changes</span>
+      </label>
+    </div>
+  {/if}
 
   <SendToAgentPanel
     taskId={task.id}
