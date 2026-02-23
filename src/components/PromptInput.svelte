@@ -266,7 +266,7 @@
       }
     }
 
-    if (e.key === 'Enter' && e.shiftKey) {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault()
       handleSubmit()
       return
@@ -336,7 +336,7 @@
       {/if}
     </div>
     <div class="flex items-center gap-2">
-      <span class="text-xs text-base-content/40">Shift+Enter to submit · Enter for newline</span>
+      <span class="text-xs text-base-content/40">⌘Enter to submit · Enter for newline</span>
       <button
         class="btn btn-primary btn-sm"
         type="button"

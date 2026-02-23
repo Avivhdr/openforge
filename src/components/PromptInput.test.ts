@@ -35,7 +35,7 @@ describe('PromptInput', () => {
     expect(textarea).toBeTruthy()
   })
 
-  it('calls onSubmit with text on Shift+Enter', async () => {
+  it('calls onSubmit with text on Cmd+Enter', async () => {
     const onSubmit = vi.fn()
     render(PromptInput, {
       props: {
@@ -47,7 +47,7 @@ describe('PromptInput', () => {
     const textarea = screen.getByPlaceholderText('Describe what you want to implement...') as HTMLTextAreaElement
     textarea.value = 'Fix the bug'
     await fireEvent.input(textarea)
-    await fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: true })
+    await fireEvent.keyDown(textarea, { key: 'Enter', metaKey: true })
 
     expect(onSubmit).toHaveBeenCalledWith('Fix the bug', null)
   })
