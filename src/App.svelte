@@ -19,6 +19,8 @@
   import ProjectSetupDialog from './components/ProjectSetupDialog.svelte'
 
 
+  import { computeDoingStatus } from './lib/doingStatus'
+
   let openCodeStatus = $state<OpenCodeStatus | null>(null)
   let unlisteners: UnlistenFn[] = []
   let showAddDialog = $state(false)
@@ -30,20 +32,7 @@
 
 
   // Doing column status indicators for Board nav button
-  let doingTasks = $derived($tasks.filter(t => t.status === 'doing'))
-  let doingCount = $derived(doingTasks.length)
-  let hasNeedsAnswer = $derived(doingTasks.some(t => {
-    const session = $activeSessions.get(t.id)
-    return session?.status === 'paused' && session?.checkpoint_data !== null
-  }))
-  let hasRunning = $derived(doingTasks.some(t => {
-    const session = $activeSessions.get(t.id)
-    return session?.status === 'running'
-  }))
-  let allDone = $derived(doingTasks.length > 0 && doingTasks.every(t => {
-    const session = $activeSessions.get(t.id)
-    return session?.status === 'completed'
-  }))
+  let doingStatus = $derived(computeDoingStatus($tasks, $activeSessions))
 
   // Navigation logic - clear selected task when switching views
   $effect(() => {
@@ -445,18 +434,18 @@
         onclick={() => $currentView = 'board'}
       >
         Board
-        {#if doingCount > 0}
+        {#if doingStatus.doingCount > 0}
           <span class="flex items-center gap-1 ml-1">
-            {#if hasNeedsAnswer}
+            {#if doingStatus.hasNeedsAnswer}
               <span class="w-2.5 h-2.5 rounded-full bg-warning" title="Agent needs input"></span>
             {/if}
-            {#if hasRunning}
+            {#if doingStatus.hasRunning}
               <span class="w-2.5 h-2.5 rounded-full bg-success animate-pulse" title="Agent running"></span>
             {/if}
-            {#if allDone}
+            {#if doingStatus.allDone}
               <span class="w-2.5 h-2.5 rounded-full bg-info" title="All agents completed"></span>
             {/if}
-            <span class="badge badge-ghost badge-sm">{doingCount}</span>
+            <span class="badge badge-ghost badge-sm">{doingStatus.doingCount}</span>
           </span>
         {/if}
       </button>
