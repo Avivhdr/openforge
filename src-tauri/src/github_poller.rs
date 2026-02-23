@@ -36,7 +36,7 @@
 //! - Skips projects with missing GitHub config
 
 use crate::db::{Database, PrRow};
-use crate::github_client::{aggregate_ci_status, aggregate_review_status, filter_to_required, CheckRunsResponse, CombinedStatusResponse, GitHubClient, PrComment, PrReview};
+use crate::github_client::{aggregate_ci_status, aggregate_review_status, deduplicate_check_runs, filter_to_required, CheckRunsResponse, CombinedStatusResponse, GitHubClient, PrComment, PrReview};
 use futures::future::join_all;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
@@ -876,6 +876,9 @@ async fn poll_prs_for_project(
         if let (Some(check_runs), Some(combined_status)) =
             (&result.check_runs, &result.combined_status)
         {
+            // Deduplicate check runs: GitHub keeps old runs from reruns,
+            // so the same check name can appear multiple times. Keep only the latest.
+            let check_runs = &deduplicate_check_runs(check_runs);
             // Filter to required checks only when branch protection is configured
             let (display_runs, new_status) = if !result.required_check_names.is_empty() {
                 let (filtered_runs, filtered_combined) = filter_to_required(

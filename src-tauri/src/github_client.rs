@@ -1401,6 +1401,38 @@ pub fn aggregate_ci_status(
     "success".to_string()
 }
 
+
+/// Deduplicate check runs by name, keeping only the latest run for each name.
+///
+/// When a GitHub Actions workflow is rerun, new check run entries are created
+/// but old ones from previous attempts remain in the API response. This causes
+/// the same check name (e.g., "preliminary-checks") to appear multiple times.
+/// This function retains only the most recent run per name (highest ID, since
+/// GitHub assigns IDs sequentially).
+///
+/// # Arguments
+/// * `response` - Check runs response potentially containing duplicate names
+///
+/// # Returns
+/// New CheckRunsResponse with at most one entry per check name
+pub fn deduplicate_check_runs(response: &CheckRunsResponse) -> CheckRunsResponse {
+    let mut latest_by_name: HashMap<&str, &CheckRun> = HashMap::new();
+
+    for run in &response.check_runs {
+        let entry = latest_by_name.entry(&run.name).or_insert(run);
+        if run.id > entry.id {
+            *entry = run;
+        }
+    }
+
+    let deduped: Vec<CheckRun> = latest_by_name.into_values().cloned().collect();
+
+    CheckRunsResponse {
+        total_count: deduped.len(),
+        check_runs: deduped,
+    }
+}
+
 /// Filter check runs and commit statuses to only include required checks
 ///
 /// When branch protection rules specify required status checks, this function
@@ -2440,4 +2472,87 @@ mod tests {
         assert!(resp.checks.is_empty());
     }
 
+    // ============================================================================
+    // deduplicate_check_runs tests
+    // ============================================================================
+
+    fn make_check_run(id: i64, name: &str, status: &str, conclusion: Option<&str>) -> CheckRun {
+        CheckRun {
+            id,
+            name: name.to_string(),
+            status: status.to_string(),
+            conclusion: conclusion.map(|c| c.to_string()),
+            html_url: format!("https://github.com/owner/repo/runs/{}", id),
+        }
+    }
+
+    #[test]
+    fn test_deduplicate_check_runs_removes_older_duplicates() {
+        let response = CheckRunsResponse {
+            total_count: 4,
+            check_runs: vec![
+                make_check_run(100, "preliminary-checks", "completed", Some("failure")),
+                make_check_run(200, "build", "completed", Some("success")),
+                make_check_run(300, "preliminary-checks", "completed", Some("success")),
+                make_check_run(400, "preliminary-checks", "completed", Some("success")),
+            ],
+        };
+
+        let deduped = deduplicate_check_runs(&response);
+        assert_eq!(deduped.total_count, 2);
+        assert_eq!(deduped.check_runs.len(), 2);
+
+        let prelim = deduped.check_runs.iter().find(|r| r.name == "preliminary-checks").unwrap();
+        assert_eq!(prelim.id, 400, "should keep the newest run (highest ID)");
+        assert_eq!(prelim.conclusion.as_deref(), Some("success"));
+
+        let build = deduped.check_runs.iter().find(|r| r.name == "build").unwrap();
+        assert_eq!(build.id, 200);
+    }
+
+    #[test]
+    fn test_deduplicate_check_runs_no_duplicates() {
+        let response = CheckRunsResponse {
+            total_count: 2,
+            check_runs: vec![
+                make_check_run(100, "build", "completed", Some("success")),
+                make_check_run(200, "test", "completed", Some("success")),
+            ],
+        };
+
+        let deduped = deduplicate_check_runs(&response);
+        assert_eq!(deduped.total_count, 2);
+        assert_eq!(deduped.check_runs.len(), 2);
+    }
+
+    #[test]
+    fn test_deduplicate_check_runs_empty() {
+        let response = CheckRunsResponse {
+            total_count: 0,
+            check_runs: vec![],
+        };
+
+        let deduped = deduplicate_check_runs(&response);
+        assert_eq!(deduped.total_count, 0);
+        assert_eq!(deduped.check_runs.len(), 0);
+    }
+
+    #[test]
+    fn test_deduplicate_check_runs_keeps_latest_status() {
+        // Simulates a rerun: old run failed, new run is still in progress
+        let response = CheckRunsResponse {
+            total_count: 2,
+            check_runs: vec![
+                make_check_run(100, "ci", "completed", Some("failure")),
+                make_check_run(500, "ci", "in_progress", None),
+            ],
+        };
+
+        let deduped = deduplicate_check_runs(&response);
+        assert_eq!(deduped.total_count, 1);
+        let ci = &deduped.check_runs[0];
+        assert_eq!(ci.id, 500);
+        assert_eq!(ci.status, "in_progress");
+        assert_eq!(ci.conclusion, None, "in-progress run should have no conclusion");
+    }
 }
