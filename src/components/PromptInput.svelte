@@ -335,7 +335,15 @@
         >+ Add JIRA key</span>
       {/if}
     </div>
-    <span class="text-xs text-base-content/40">Shift+Enter to submit · Enter for newline</span>
+    <div class="flex items-center gap-2">
+      <span class="text-xs text-base-content/40">Shift+Enter to submit · Enter for newline</span>
+      <button
+        class="btn btn-primary btn-sm"
+        type="button"
+        disabled={!textValue.trim()}
+        onclick={handleSubmit}
+      >Submit</button>
+    </div>
   </div>
 
   {#if showModelDownload}

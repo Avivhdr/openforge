@@ -98,6 +98,37 @@ describe('PromptInput', () => {
     expect(jiraInput).toBeTruthy()
   })
 
+
+  it('renders a submit button', () => {
+    render(PromptInput, { props: { ...baseProps } })
+    const button = screen.getByRole('button', { name: 'Submit' })
+    expect(button).toBeTruthy()
+  })
+
+  it('submit button is disabled when textarea is empty', () => {
+    render(PromptInput, { props: { ...baseProps } })
+    const button = screen.getByRole('button', { name: 'Submit' }) as HTMLButtonElement
+    expect(button.disabled).toBe(true)
+  })
+
+  it('calls onSubmit when submit button is clicked', async () => {
+    const onSubmit = vi.fn()
+    render(PromptInput, {
+      props: {
+        ...baseProps,
+        onSubmit,
+      },
+    })
+
+    const textarea = screen.getByPlaceholderText('Describe what you want to implement...') as HTMLTextAreaElement
+    textarea.value = 'Fix the bug'
+    await fireEvent.input(textarea)
+    const button = screen.getByRole('button', { name: 'Submit' })
+    await fireEvent.click(button)
+
+    expect(onSubmit).toHaveBeenCalledWith('Fix the bug', null)
+  })
+
   it('does not submit empty text', async () => {
     const onSubmit = vi.fn()
     render(PromptInput, {
