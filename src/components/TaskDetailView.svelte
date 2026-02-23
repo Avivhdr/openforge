@@ -79,51 +79,60 @@
 </script>
 
 <div class="flex flex-col flex-1 h-full bg-base-100 overflow-hidden">
-  <header class="flex items-center gap-3 px-6 py-3.5 bg-base-200 border-b border-base-300 shrink-0">
-    <button class="btn btn-soft btn-sm gap-1.5 shrink-0 shadow-sm hover:shadow-md transition-shadow" onclick={handleBack}>
-      <span class="text-base leading-none">←</span>
-      Back
-    </button>
-    <span class="text-base-content/20 select-none">|</span>
-    <span class="text-[0.8125rem] font-semibold text-base-content/50 font-mono shrink-0">{task.jira_key || task.id}</span>
-    {#if task.jira_key && jiraBaseUrl}
-      <button
-        class="btn btn-ghost btn-xs px-1.5 min-h-0 h-auto text-primary hover:underline"
-        onclick={() => openUrl(`${jiraBaseUrl}/browse/${task.jira_key}`)}
-        title="Open in Jira"
-      >↗</button>
-    {/if}
-    <h1 class="text-lg font-bold text-base-content m-0 flex-1 min-w-0" title={task.jira_title || task.title.split('\n')[0]}>{task.jira_title || task.title.split('\n')[0]}</h1>
-    <span class="badge {task.status === 'doing' ? 'badge-success' : task.status === 'done' ? 'badge-primary' : 'badge-ghost'} uppercase tracking-wider text-xs font-semibold shrink-0">
-      {getStatusLabel(task.status)}
-    </span>
-    {#if worktreePath !== null}
-      <div class="inline-flex items-center bg-base-300 border border-base-300 rounded-full p-0.5 gap-0.5 shrink-0 shadow-sm">
-        <button class="btn btn-ghost btn-xs rounded-full px-4 transition-all duration-200 {!reviewMode ? 'btn-active bg-primary text-primary-content font-semibold shadow-sm' : 'hover:bg-base-200'}" onclick={() => reviewMode = false}>Code</button>
-        <button class="btn btn-ghost btn-xs rounded-full px-4 transition-all duration-200 {reviewMode ? 'btn-active bg-primary text-primary-content font-semibold shadow-sm' : 'hover:bg-base-200'}" onclick={() => reviewMode = true}>Review</button>
-      </div>
-    {/if}
-    {#if task.status !== 'done'}
-      <button
-        class="btn btn-success btn-sm shrink-0 shadow-sm hover:shadow-md transition-shadow"
-        onclick={() => handleStatusChange('done')}
-      >
-        Move to Done
+  <header class="flex flex-col bg-base-200 border-b border-base-300 shrink-0">
+    <div class="flex items-center gap-3 px-6 py-3.5">
+      <button class="btn btn-soft btn-sm gap-1.5 shrink-0 shadow-sm hover:shadow-md transition-shadow" onclick={handleBack}>
+        <span class="text-base leading-none">←</span>
+        Back
       </button>
-    {/if}
-    {#if actions.length > 0}
-      <div class="flex gap-1.5 shrink-0">
-        {#each actions as action (action.id)}
-          <button
-            class="btn btn-soft btn-sm shadow-sm hover:shadow-md hover:btn-primary transition-all duration-200"
-            disabled={isSessionBusy}
-            title={isSessionBusy ? busyReason : action.name}
-            onclick={() => handleActionClick(action)}
-          >
-            {action.name}
-          </button>
-        {/each}
-      </div>
+      <span class="text-base-content/20 select-none">|</span>
+      <span class="text-[0.8125rem] font-semibold text-base-content/50 font-mono shrink-0">{task.jira_key || task.id}</span>
+      {#if task.jira_key && jiraBaseUrl}
+        <button
+          class="btn btn-ghost btn-xs px-1.5 min-h-0 h-auto text-primary hover:underline"
+          onclick={() => openUrl(`${jiraBaseUrl}/browse/${task.jira_key}`)}
+          title="Open in Jira"
+        >↗</button>
+      {/if}
+      <h1 class="text-lg font-bold text-base-content m-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap min-w-0" title={task.title.split('\n')[0]}>{task.title.split('\n')[0]}</h1>
+      <span class="badge {task.status === 'doing' ? 'badge-success' : task.status === 'done' ? 'badge-primary' : 'badge-ghost'} uppercase tracking-wider text-xs font-semibold shrink-0">
+        {getStatusLabel(task.status)}
+      </span>
+      {#if worktreePath !== null}
+        <div class="inline-flex items-center bg-base-300 border border-base-300 rounded-full p-0.5 gap-0.5 shrink-0 shadow-sm">
+          <button class="btn btn-ghost btn-xs rounded-full px-4 transition-all duration-200 {!reviewMode ? 'btn-active bg-primary text-primary-content font-semibold shadow-sm' : 'hover:bg-base-200'}" onclick={() => reviewMode = false}>Code</button>
+          <button class="btn btn-ghost btn-xs rounded-full px-4 transition-all duration-200 {reviewMode ? 'btn-active bg-primary text-primary-content font-semibold shadow-sm' : 'hover:bg-base-200'}" onclick={() => reviewMode = true}>Review</button>
+        </div>
+      {/if}
+      {#if task.status !== 'done'}
+        <button
+          class="btn btn-success btn-sm shrink-0 shadow-sm hover:shadow-md transition-shadow"
+          onclick={() => handleStatusChange('done')}
+        >
+          Move to Done
+        </button>
+      {/if}
+      {#if actions.length > 0}
+        <div class="flex gap-1.5 shrink-0">
+          {#each actions as action (action.id)}
+            <button
+              class="btn btn-soft btn-sm shadow-sm hover:shadow-md hover:btn-primary transition-all duration-200"
+              disabled={isSessionBusy}
+              title={isSessionBusy ? busyReason : action.name}
+              onclick={() => handleActionClick(action)}
+            >
+              {action.name}
+            </button>
+          {/each}
+        </div>
+      {/if}
+    </div>
+    {#if task.jira_title && task.jira_key}
+      <button
+        class="text-sm text-base-content/50 hover:text-primary text-left truncate px-6 pb-3 -mt-1 transition-colors cursor-pointer"
+        title={task.jira_title}
+        onclick={() => jiraBaseUrl && openUrl(`${jiraBaseUrl}/browse/${task.jira_key}`)}
+      >{task.jira_title}</button>
     {/if}
   </header>
 
@@ -141,5 +150,3 @@
     {/if}
   </div>
 </div>
-
-
