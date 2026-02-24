@@ -1,6 +1,6 @@
 # AGENTS.md — AI Command Center
 
-Tauri v2 desktop app: Svelte 4 + TypeScript frontend, Rust backend, SQLite database.
+Tauri v2 desktop app: Svelte 5 + TypeScript frontend, Rust backend, SQLite database.
 Manages JIRA tickets on a Kanban board with AI agent orchestration via OpenCode.
 
 ## Build & Run Commands
@@ -86,6 +86,7 @@ Order: external packages, then internal modules. Use `import type` for type-only
 ```svelte
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte'
+  import type { Snippet } from 'svelte'
   import { listen } from '@tauri-apps/api/event'
   import type { UnlistenFn } from '@tauri-apps/api/event'
   import { tickets, selectedTicketId } from './lib/stores'
@@ -152,8 +153,8 @@ Never use plain `<a>` tags for external links.
 </script>
 
 <span class="link" role="link" tabindex="0"
-  on:click={() => openUrl(url)}
-  on:keydown={(e) => e.key === 'Enter' && openUrl(url)}
+  onclick={() => openUrl(url)}
+  onkeydown={(e) => e.key === 'Enter' && openUrl(url)}
 >Open link</span>
 ```
 
