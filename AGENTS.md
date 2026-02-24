@@ -248,14 +248,69 @@ export type KanbanColumn = "backlog" | "doing" | "done";
 
 ### State Management
 
-Svelte writable stores in `src/lib/stores.ts`. Access with `$store` syntax in components.
+The app uses two co-existing state systems. Both are intentional and permanent -- don't
+try to consolidate them.
+
+#### Cross-component state: writable stores
+
+Shared state that multiple unrelated components need lives in `src/lib/stores.ts` as
+Svelte writable stores. Access with `$store` syntax in components.
 
 ```ts
 export const tickets = writable<Ticket[]>([]);
 export const error = writable<string | null>(null);
+export const activeSessions = writable<Map<string, AgentSession>>(new Map());
 ```
 
-For component-local state, use `$state()` runes. See the [Svelte 5 Runes](#svelte-5-runes) section above.
+24 writable stores exist in this codebase. That's by design, not technical debt.
+
+#### Component-local state: $state runes
+
+State owned by a single component stays local with `$state()`. Never put component-local
+state in global stores.
+
+```ts
+let isLoading = $state(false)
+let showDialog = $state(false)
+let searchQuery = $state('')
+```
+
+#### Derived state: $derived runes
+
+Computed values that depend on other state use `$derived()` inside components:
+
+```ts
+let currentProject = $derived($projects.find(p => p.id === $activeProjectId))
+let activeModel = $derived(modelStatuses.find(m => m.is_active))
+```
+
+If 3+ components compute the same derivation, add a derived store to `stores.ts` instead
+of duplicating the logic.
+
+#### Map store update pattern
+
+Map-based stores (like `activeSessions`) require creating a new Map to trigger Svelte
+reactivity. Direct mutation won't work. This pattern appears throughout `App.svelte`:
+
+```ts
+// Correct: create a new Map to trigger reactivity
+const updated = new Map($activeSessions)
+updated.set(taskId, session)
+$activeSessions = updated
+
+// Wrong: direct mutation -- Svelte won't detect this change
+$activeSessions.set(taskId, session)
+```
+
+#### When to use each approach
+
+| Situation | Use |
+|-----------|-----|
+| Data passed from parent to child | Props |
+| State shared across multiple unrelated components | Writable store in `stores.ts` |
+| State owned by a single component (loading flags, dialogs, form fields) | `$state()` |
+| Computed value derived from other state | `$derived()` |
+| Same derivation needed in 3+ components | Derived store in `stores.ts` |
 
 ### IPC (Frontend ↔ Backend)
 
