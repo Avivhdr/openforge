@@ -1,8 +1,11 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte'
-  import { selfReviewDiffFiles, selfReviewGeneralComments, selfReviewArchivedComments, pendingManualComments, ticketPrs } from '../lib/stores'
-  import { getTaskDiff, getTaskFileContents, getTaskBatchFileContents, getActiveSelfReviewComments, getArchivedSelfReviewComments, getPrComments, markCommentAddressed, openUrl } from '../lib/ipc'
-  import type { Task, PullRequestInfo, PrComment, PrFileDiff } from '../lib/types'
+  import { selfReviewDiffFiles, selfReviewGeneralComments } from '../lib/stores'
+  import { getTaskFileContents, getTaskBatchFileContents, openUrl } from '../lib/ipc'
+  import { timeAgo } from '../lib/timeAgo'
+  import { createDiffLoader } from '../lib/useDiffLoader.svelte'
+  import { createCommentSelection } from '../lib/useCommentSelection.svelte'
+  import type { Task, PrFileDiff } from '../lib/types'
   import type { FileContents } from '../lib/diffAdapter'
   import FileTree from './FileTree.svelte'
   import DiffViewer from './DiffViewer.svelte'
@@ -18,95 +21,37 @@
 
   let { task, agentStatus, onSendToAgent }: Props = $props()
 
-  let isLoading = $state(false)
-  let error = $state<string | null>(null)
   let diffViewer = $state<DiffViewer>()
-  let prComments = $state<PrComment[]>([])
-  let linkedPr = $state<PullRequestInfo | null>(null)
   let fileTreeVisible = $state(true)
   let includeUncommitted = $state(false)
 
   // Sidebar state
   let sidebarVisible = $state(false)
   let sidebarTab = $state<'pr' | 'notes'>('pr')
-  let selectedPrCommentIds = $state<Set<number>>(new Set())
 
-  let unaddressedComments = $derived(prComments.filter(c => c.addressed === 0))
-  let unaddressedCount = $derived(unaddressedComments.length)
-  let selectedCount = $derived(selectedPrCommentIds.size)
-  let selectedPrComments = $derived(prComments.filter(c => selectedPrCommentIds.has(c.id)))
+  // Composables
+  const diffLoader = createDiffLoader({
+    getTaskId: () => task.id,
+    getIncludeUncommitted: () => includeUncommitted,
+  })
+
+  const commentSelection = createCommentSelection({
+    getPrComments: () => diffLoader.prComments,
+  })
 
   let hasAutoOpened = false
   $effect(() => {
-    if (unaddressedCount > 0 && !hasAutoOpened) {
+    if (commentSelection.unaddressedCount > 0 && !hasAutoOpened) {
       sidebarVisible = true
       hasAutoOpened = true
     }
   })
-
-  function timeAgo(timestamp: number): string {
-    const seconds = Math.floor((Date.now() / 1000) - timestamp)
-    if (seconds < 60) return 'just now'
-    const minutes = Math.floor(seconds / 60)
-    if (minutes < 60) return `${minutes}m ago`
-    const hours = Math.floor(minutes / 60)
-    if (hours < 24) return `${hours}h ago`
-    const days = Math.floor(hours / 24)
-    return `${days}d ago`
-  }
-
-  async function handleMarkAddressed(commentId: number) {
-    try {
-      await markCommentAddressed(commentId)
-      prComments = prComments.map(c =>
-        c.id === commentId ? { ...c, addressed: 1 } : c
-      )
-      // Remove from selection if it was selected
-      if (selectedPrCommentIds.has(commentId)) {
-        const next = new Set(selectedPrCommentIds)
-        next.delete(commentId)
-        selectedPrCommentIds = next
-      }
-    } catch (e) {
-      console.error('Failed to mark comment addressed:', e)
-    }
-  }
 
   function handleFileSelect(filename: string) {
     if (diffViewer) {
       diffViewer.scrollToFile(filename)
     }
   }
-
-  function togglePrCommentSelected(commentId: number) {
-    const next = new Set(selectedPrCommentIds)
-    if (next.has(commentId)) next.delete(commentId)
-    else next.add(commentId)
-    selectedPrCommentIds = next
-  }
-
-  function selectAllUnaddressed() {
-    selectedPrCommentIds = new Set(unaddressedComments.map(c => c.id))
-  }
-
-  function deselectAll() {
-    selectedPrCommentIds = new Set()
-  }
-
-  async function handleRefresh() {
-    isLoading = true
-    error = null
-    try {
-      const diffs = await getTaskDiff(task.id, includeUncommitted)
-      $selfReviewDiffFiles = diffs
-    } catch (e) {
-      console.error('Failed to refresh diff:', e)
-      error = String(e)
-    } finally {
-      isLoading = false
-    }
-  }
-
 
   async function fetchTaskFileContents(file: PrFileDiff): Promise<FileContents> {
     const [oldContent, newContent] = await getTaskFileContents(
@@ -131,73 +76,25 @@
   }
 
   onMount(async () => {
-    isLoading = true
-    error = null
-    try {
-      // 1. Load diff
-      const diffs = await getTaskDiff(task.id, includeUncommitted)
-      $selfReviewDiffFiles = diffs
-
-      // 2. Load active comments and split by type
-      const activeComments = await getActiveSelfReviewComments(task.id)
-      $selfReviewGeneralComments = activeComments.filter(c => c.comment_type === 'general')
-
-      // 3. Load archived comments and filter to general
-      const archivedComments = await getArchivedSelfReviewComments(task.id)
-      $selfReviewArchivedComments = archivedComments.filter(c => c.comment_type === 'general')
-
-      // 4 & 5. Clear then populate pendingManualComments from inline active comments
-      $pendingManualComments = activeComments
-        .filter(c => c.comment_type === 'inline')
-        .map(c => ({
-          path: c.file_path!,
-          line: c.line_number!,
-          body: c.body,
-          side: 'RIGHT'
-        }))
-
-      // 6. Load GitHub PR comments for the most recently updated open PR
-      const taskPrs = $ticketPrs.get(task.id) || []
-      const openPrs = taskPrs
-        .filter(pr => pr.state === 'open')
-        .sort((a, b) => b.updated_at - a.updated_at)
-      if (openPrs.length > 0) {
-        const pr = openPrs[0]
-        linkedPr = pr
-        try {
-          prComments = await getPrComments(pr.id)
-        } catch (e) {
-          console.error(`Failed to load comments for PR ${pr.id}:`, e)
-          prComments = []
-        }
-      }
-    } catch (e) {
-      console.error('Failed to load self-review data:', e)
-      error = String(e)
-    } finally {
-      isLoading = false
-    }
+    await diffLoader.loadDiff()
   })
 
   onDestroy(() => {
-    $selfReviewDiffFiles = []
-    $selfReviewGeneralComments = []
-    $selfReviewArchivedComments = []
-    $pendingManualComments = []
+    diffLoader.cleanup()
   })
 </script>
 
 <div class="flex flex-col w-full h-full overflow-hidden">
   <div class="flex flex-1 overflow-hidden">
-    {#if isLoading}
+    {#if diffLoader.isLoading}
       <div class="flex flex-col items-center justify-center flex-1 gap-3 text-base-content/50 text-sm">
         <span class="loading loading-spinner loading-md text-primary"></span>
         <span>Loading diff...</span>
       </div>
-    {:else if error}
+    {:else if diffLoader.error}
       <div class="flex flex-col items-center justify-center flex-1 gap-3 text-error text-sm text-center p-5">
         <span class="text-5xl">⚠</span>
-        <span>{error}</span>
+        <span>{diffLoader.error}</span>
       </div>
     {:else if $selfReviewDiffFiles.length === 0}
       <div class="flex flex-col items-center justify-center flex-1 gap-4 text-base-content/50 text-center p-10">
@@ -228,8 +125,8 @@
                 title={sidebarVisible ? 'Hide comments panel' : 'Show comments panel'}
               >
                 Comments
-                {#if unaddressedCount > 0 && !sidebarVisible}
-                  <span class="badge badge-error badge-xs">{unaddressedCount}</span>
+                {#if commentSelection.unaddressedCount > 0 && !sidebarVisible}
+                  <span class="badge badge-error badge-xs">{commentSelection.unaddressedCount}</span>
                 {/if}
               </button>
             {/snippet}
@@ -240,7 +137,7 @@
               <button class="flex-1 px-3 py-2.5 text-xs font-semibold uppercase tracking-wider text-center transition-colors {sidebarTab === 'pr' ? 'text-primary border-b-2 border-primary bg-base-100' : 'text-base-content/50 hover:text-base-content hover:bg-base-content/5'}"
                 onclick={() => { sidebarTab = 'pr' }}>
                 PR Comments
-                {#if unaddressedCount > 0}<span class="badge badge-error badge-xs ml-1">{unaddressedCount}</span>{/if}
+                {#if commentSelection.unaddressedCount > 0}<span class="badge badge-error badge-xs ml-1">{commentSelection.unaddressedCount}</span>{/if}
               </button>
               <button class="flex-1 px-3 py-2.5 text-xs font-semibold uppercase tracking-wider text-center transition-colors {sidebarTab === 'notes' ? 'text-primary border-b-2 border-primary bg-base-100' : 'text-base-content/50 hover:text-base-content hover:bg-base-content/5'}"
                 onclick={() => { sidebarTab = 'notes' }}>
@@ -249,28 +146,28 @@
               </button>
             </div>
             <div class="flex-1 overflow-hidden flex flex-col" class:hidden={sidebarTab !== 'pr'}>
-              {#if linkedPr}
+              {#if diffLoader.linkedPr}
                 <div class="flex items-center gap-2 px-3 py-2 bg-base-200/50 border-b border-base-300 shrink-0">
-                  {#if selectedCount > 0}
-                    <span class="text-[0.7rem] font-semibold text-primary">{selectedCount} selected</span>
-                    <button class="btn btn-ghost btn-xs text-base-content/40 hover:text-base-content" onclick={deselectAll}>Clear</button>
-                  {:else if unaddressedCount > 0}
-                    <button class="btn btn-ghost btn-xs text-base-content/40 hover:text-primary" onclick={selectAllUnaddressed}>Select all</button>
+                  {#if commentSelection.selectedCount > 0}
+                    <span class="text-[0.7rem] font-semibold text-primary">{commentSelection.selectedCount} selected</span>
+                    <button class="btn btn-ghost btn-xs text-base-content/40 hover:text-base-content" onclick={commentSelection.deselectAll}>Clear</button>
+                  {:else if commentSelection.unaddressedCount > 0}
+                    <button class="btn btn-ghost btn-xs text-base-content/40 hover:text-primary" onclick={commentSelection.selectAll}>Select all</button>
                   {/if}
                   <span class="flex-1"></span>
                   <span class="text-[0.7rem] text-primary cursor-pointer hover:underline" role="link" tabindex="0"
-                    onclick={() => openUrl(linkedPr!.url)}
-                    onkeydown={(e: KeyboardEvent) => e.key === 'Enter' && openUrl(linkedPr!.url)}>GitHub ↗</span>
+                    onclick={() => openUrl(diffLoader.linkedPr!.url)}
+                    onkeydown={(e: KeyboardEvent) => e.key === 'Enter' && openUrl(diffLoader.linkedPr!.url)}>GitHub ↗</span>
                 </div>
-                {#if prComments.length === 0}
+                {#if diffLoader.prComments.length === 0}
                   <div class="flex flex-col items-center justify-center flex-1 gap-2 px-4 py-8 text-center">
                     <span class="text-2xl opacity-40">💬</span>
                     <p class="m-0 text-xs text-base-content/50">No review comments on this PR yet</p>
                   </div>
                 {:else}
                   <div class="flex-1 overflow-y-auto">
-                    {#each prComments as comment (comment.id)}
-                      {@const isSelected = selectedPrCommentIds.has(comment.id)}
+                    {#each diffLoader.prComments as comment (comment.id)}
+                      {@const isSelected = commentSelection.selectedPrCommentIds.has(comment.id)}
                       <div class="px-4 py-3.5 border-b border-base-300 last:border-b-0 {comment.addressed === 1 ? 'opacity-40' : ''}">
                         <div class="flex items-start gap-2">
                           {#if comment.addressed === 0}
@@ -278,7 +175,7 @@
                               type="checkbox"
                               class="checkbox checkbox-xs checkbox-primary mt-0.5 shrink-0"
                               checked={isSelected}
-                              onchange={() => togglePrCommentSelected(comment.id)}
+                              onchange={() => commentSelection.toggleSelected(comment.id)}
                             />
                           {/if}
                           <div class="flex-1 min-w-0">
@@ -287,7 +184,7 @@
                                 {comment.author.charAt(0).toUpperCase()}
                               </div>
                               <span class="text-xs font-semibold text-base-content">@{comment.author}</span>
-                              <span class="text-[0.65rem] text-base-content/40 ml-auto">{timeAgo(comment.created_at)}</span>
+                              <span class="text-[0.65rem] text-base-content/40 ml-auto">{timeAgo(comment.created_at * 1000)}</span>
                             </div>
                             {#if comment.file_path}
                               <div class="flex items-center gap-1 mb-1.5">
@@ -300,7 +197,7 @@
                             {#if comment.addressed === 0}
                               <button
                                 class="btn btn-ghost btn-xs mt-1.5 text-base-content/50 hover:text-success hover:bg-success/10"
-                                onclick={() => handleMarkAddressed(comment.id)}
+                                onclick={() => commentSelection.markAddressed(comment.id)}
                               >✓ Mark addressed</button>
                             {:else}
                               <span class="text-[0.65rem] text-success font-medium mt-1">✓ Addressed</span>
@@ -328,10 +225,10 @@
     {/if}
   </div>
 
-  {#if !isLoading && !error}
+  {#if !diffLoader.isLoading && !diffLoader.error}
     <div class="flex items-center gap-2 px-3 py-1.5 border-t border-base-300 bg-base-200 text-xs">
       <label class="flex items-center gap-1.5 cursor-pointer">
-        <input type="checkbox" class="checkbox checkbox-xs" checked={includeUncommitted} onchange={(e: Event) => { includeUncommitted = (e.target as HTMLInputElement).checked; handleRefresh() }} />
+        <input type="checkbox" class="checkbox checkbox-xs" checked={includeUncommitted} onchange={(e: Event) => { includeUncommitted = (e.target as HTMLInputElement).checked; diffLoader.refresh() }} />
         <span class="text-base-content/70">Include uncommitted changes</span>
       </label>
     </div>
@@ -342,8 +239,8 @@
     taskTitle={task.title}
     {agentStatus}
     {onSendToAgent}
-    onRefresh={handleRefresh}
-    {selectedPrComments}
-    onSendComplete={() => { selectedPrCommentIds = new Set() }}
+    onRefresh={diffLoader.refresh}
+    selectedPrComments={commentSelection.selectedPrComments}
+    onSendComplete={() => { commentSelection.deselectAll() }}
   />
 </div>

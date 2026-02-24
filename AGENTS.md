@@ -1,6 +1,6 @@
 # AGENTS.md — AI Command Center
 
-Tauri v2 desktop app: Svelte 4 + TypeScript frontend, Rust backend, SQLite database.
+Tauri v2 desktop app: Svelte 5 + TypeScript frontend, Rust backend, SQLite database.
 Manages JIRA tickets on a Kanban board with AI agent orchestration via OpenCode.
 
 ## Build & Run Commands
@@ -86,6 +86,7 @@ Order: external packages, then internal modules. Use `import type` for type-only
 ```svelte
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte'
+  import type { Snippet } from 'svelte'
   import { listen } from '@tauri-apps/api/event'
   import type { UnlistenFn } from '@tauri-apps/api/event'
   import { tickets, selectedTicketId } from './lib/stores'
@@ -102,6 +103,131 @@ Order: external packages, then internal modules. Use `import type` for type-only
 - **Types/interfaces**: PascalCase (`Ticket`, `AgentSession`, `KanbanColumn`)
 - **Constants**: UPPER_SNAKE_CASE (`COLUMN_LABELS`, `COLUMNS`)
 - **CSS classes**: daisyUI semantic classes (`btn`, `badge`, `modal-box`) + Tailwind utilities (`flex`, `gap-2`, `p-4`)
+
+### Svelte 5 Runes
+
+Svelte 5 uses runes for reactivity. The codebase uses all four core runes consistently.
+
+**`$state`** — Local component state:
+
+```ts
+let isLoading = $state(false)
+let error = $state<string | null>(null)
+let actions = $state<Action[]>([])
+```
+
+**`$derived`** — Computed values that update automatically when their dependencies change:
+
+```ts
+let activeModel = $derived(modelStatuses.find(m => m.is_active))
+let currentProject = $derived($projects.find(p => p.id === $activeProjectId))
+```
+
+**`$effect`** — Side effects that re-run when reactive dependencies change:
+
+```ts
+$effect(() => {
+  if (hasAutoCollapsed) return
+  if (files.length === 0) return
+
+  const largeFiles = new Set<string>()
+  for (const file of files) {
+    if (file.additions + file.deletions > 500 || file.is_truncated === true) {
+      largeFiles.add(file.filename)
+    }
+  }
+  collapsedFiles = largeFiles
+  hasAutoCollapsed = true
+})
+```
+
+`$effect` is NOT a replacement for `onMount`. Use `$effect` when you need to react to
+changing reactive dependencies. Use `onMount` for one-time setup after DOM mount (e.g.,
+subscribing to Tauri events, initializing a terminal). Both are valid in Svelte 5.
+
+**`$props`** — Declare component inputs with a typed `Props` interface:
+
+```ts
+interface Props {
+  task: Task
+  onRunAction: (data: { taskId: string; actionPrompt: string; agent: string | null }) => void
+}
+let { task, onRunAction }: Props = $props()
+```
+
+Every component defines a local `Props` interface and destructures via `$props()`. Optional
+props use `?` in the interface (e.g., `maxWidth?: string`).
+
+**Callback props over events** — Use `on`-prefixed callback props instead of
+Svelte's legacy event dispatcher. Never use the legacy dispatcher API in this codebase.
+
+```ts
+// Correct: callback prop with on prefix
+interface Props {
+  onClose: () => void
+  onSave: (value: string) => void
+}
+
+// Wrong: do not use the legacy event dispatcher pattern
+```
+
+**Snippets** — For flexible child content in composable components:
+
+```ts
+import type { Snippet } from 'svelte'
+
+interface Props {
+  children: Snippet
+  header?: Snippet  // optional snippet slot
+}
+```
+
+Used in `Modal.svelte` and `DiffViewer.svelte` to pass structured markup as props.
+
+### Component Structure
+
+**Size guidance**: Soft limit of ~300 lines per component. If a component exceeds this,
+check whether it mixes unrelated concerns (data fetching + state management + presentation
+all in one file). A component should be split when it manages 2+ unrelated concerns.
+
+**Exception**: Root orchestrator components like `App.svelte` that manage global event
+listeners, Tauri event subscriptions, and top-level routing may exceed this limit. That's
+expected and acceptable.
+
+**Standard script ordering** -- keep declarations in this order for consistency:
+
+```ts
+// 1. Imports (external -> internal, per existing convention)
+// 2. Props interface + $props() destructuring
+// 3. Local state ($state declarations)
+// 4. Derived state ($derived declarations)
+// 5. Effects ($effect blocks)
+// 6. Lifecycle hooks (onMount, onDestroy)
+// 7. Event handlers and helper functions
+```
+
+Good examples: `TaskCard.svelte` (~196 lines, single concern: card rendering),
+`FileTree.svelte` (~164 lines, single concern: tree navigation).
+
+### Code Extraction
+
+Extract code to `src/lib/` when:
+- A utility function is used by 2+ components -> `src/lib/{name}.ts`
+- State logic uses runes and can be reused -> `src/lib/use{Name}.svelte.ts`
+- Data transformation is complex enough to test in isolation -> `src/lib/{name}.ts`
+
+**Naming conventions:**
+- `camelCase.ts` for plain utilities (no rune usage)
+- `use{Name}.svelte.ts` for Svelte 5 composables that use runes
+
+**Existing examples** (codify these patterns, don't reinvent them):
+- `src/lib/doingStatus.ts` -- pure function used by `App.svelte`
+- `src/lib/parseCheckpoint.ts` -- parsing logic separated from UI
+- `src/lib/diffAdapter.ts` -- data transformation layer
+- `src/lib/useDiffSearch.svelte.ts` -- Svelte 5 composable with rune usage
+
+**Anti-pattern**: Duplicating utility functions across components (e.g., a `timeAgo()`
+helper copied into multiple files). Extract once, import everywhere.
 
 ### Types
 
@@ -122,12 +248,69 @@ export type KanbanColumn = "backlog" | "doing" | "done";
 
 ### State Management
 
-Svelte writable stores in `src/lib/stores.ts`. Access with `$store` syntax in components.
+The app uses two co-existing state systems. Both are intentional and permanent -- don't
+try to consolidate them.
+
+#### Cross-component state: writable stores
+
+Shared state that multiple unrelated components need lives in `src/lib/stores.ts` as
+Svelte writable stores. Access with `$store` syntax in components.
 
 ```ts
 export const tickets = writable<Ticket[]>([]);
 export const error = writable<string | null>(null);
+export const activeSessions = writable<Map<string, AgentSession>>(new Map());
 ```
+
+24 writable stores exist in this codebase. That's by design, not technical debt.
+
+#### Component-local state: $state runes
+
+State owned by a single component stays local with `$state()`. Never put component-local
+state in global stores.
+
+```ts
+let isLoading = $state(false)
+let showDialog = $state(false)
+let searchQuery = $state('')
+```
+
+#### Derived state: $derived runes
+
+Computed values that depend on other state use `$derived()` inside components:
+
+```ts
+let currentProject = $derived($projects.find(p => p.id === $activeProjectId))
+let activeModel = $derived(modelStatuses.find(m => m.is_active))
+```
+
+If 3+ components compute the same derivation, add a derived store to `stores.ts` instead
+of duplicating the logic.
+
+#### Map store update pattern
+
+Map-based stores (like `activeSessions`) require creating a new Map to trigger Svelte
+reactivity. Direct mutation won't work. This pattern appears throughout `App.svelte`:
+
+```ts
+// Correct: create a new Map to trigger reactivity
+const updated = new Map($activeSessions)
+updated.set(taskId, session)
+$activeSessions = updated
+
+// Wrong: direct mutation -- Svelte won't detect this change
+$activeSessions.set(taskId, session)
+```
+
+#### When to use each approach
+
+| Situation | Use |
+|-----------|-----|
+| Data passed from parent to child | Props |
+| State shared across multiple unrelated components | Writable store in `stores.ts` |
+| State owned by a single component (loading flags, dialogs, form fields) | `$state()` |
+| Computed value derived from other state | `$derived()` |
+| Same derivation needed in 3+ components | Derived store in `stores.ts` |
 
 ### IPC (Frontend ↔ Backend)
 
@@ -152,16 +335,14 @@ Never use plain `<a>` tags for external links.
 </script>
 
 <span class="link" role="link" tabindex="0"
-  on:click={() => openUrl(url)}
-  on:keydown={(e) => e.key === 'Enter' && openUrl(url)}
+  onclick={() => openUrl(url)}
+  onkeydown={(e) => e.key === 'Enter' && openUrl(url)}
 >Open link</span>
 ```
 
 ### Error Handling (Frontend)
-
-try/catch in async functions. Log with `console.error`, set the `error` store for user-facing
+try/catch in async functions. Log with `console.error`, set the `$error` store for user-facing
 messages. Always include `finally` for loading states.
-
 ```ts
 async function loadTickets() {
   $isLoading = true
@@ -169,12 +350,119 @@ async function loadTickets() {
     $tickets = await getTickets()
   } catch (e) {
     console.error('Failed to load tickets:', e)
-    $error = String(e)
+    $error = 'Failed to load tickets. Please try again.'
   } finally {
     $isLoading = false
   }
 }
 ```
+
+**Error message quality** -- the `$error` store displays values to users via the Toast component.
+Prefer human-readable messages over raw `String(e)`. Keep `console.error` with full technical
+details for debugging.
+
+```ts
+// Preferred: user-friendly message
+$error = 'Failed to load tasks. Please try again.'
+
+// Avoid: raw error string exposed to users
+$error = String(e)
+```
+
+Prefix `console.error` calls with the component name for easier log filtering:
+`console.error('[AgentPanel] Failed to fetch session:', e)`
+
+**Three-tier error handling** -- choose the right tier based on context:
+
+| Tier | When to use | Example |
+|------|-------------|---------|
+| `$error` store | User-initiated operations (button clicks, form submissions) | Loading tickets on demand, submitting a form |
+| Local `error` `$state` | Background loading within a component | Loading diffs in a panel, fetching inline data |
+| `console.error` only | Non-critical operations where the user doesn't need to know | Fetching session state after server resume |
+
+```ts
+// Tier 1: global $error store (user-initiated)
+catch (e) {
+  console.error('[MyComponent] Failed to submit:', e)
+  $error = 'Failed to submit. Please try again.'
+}
+
+// Tier 2: local $state (background loading in a component)
+let error = $state<string | null>(null)
+catch (e) {
+  console.error('[MyComponent] Failed to load diffs:', e)
+  error = 'Failed to load diffs.'
+}
+
+// Tier 3: silent (non-critical, user doesn't need to know)
+catch (e) {
+  console.error('[MyComponent] Failed to fetch session after resume:', e)
+}
+```
+
+
+### Lifecycle & Cleanup
+
+#### onMount vs $effect
+
+Both hooks run after the component mounts, but they serve different purposes.
+
+**`onMount`** -- one-time setup after the DOM is ready. Use it for:
+- Initial data loading that doesn't depend on reactive state
+- Initializing external libraries (e.g., xterm.js terminal instances)
+- Registering Tauri event listeners that need cleanup in `onDestroy`
+
+**`$effect`** -- reactive side effects that re-run whenever their dependencies change. Use it for:
+- Syncing derived state when a reactive value updates
+- Auto-focusing elements based on component state
+- Fetching data when a reactive dependency (prop, store, `$state`) changes
+
+Rule of thumb: if it depends on reactive state and should re-run, use `$effect`. If it runs once at mount time, use `onMount`.
+
+#### Cleanup Checklist
+
+Every component with side effects must clean up in `onDestroy`. Check each resource type:
+
+| Resource | Acquire | Release |
+|----------|---------|---------|
+| Tauri event listeners | `listen('event', handler)` -> store `UnlistenFn` | Call each `UnlistenFn` in `onDestroy` |
+| Window/document listeners | `addEventListener(...)` | `removeEventListener(...)` |
+| Timers | `setTimeout` / `setInterval` | `clearTimeout` / `clearInterval` |
+| Observers | `new ResizeObserver(...)` / `new IntersectionObserver(...)` | `.disconnect()` |
+| External library instances | e.g., `new Terminal()` | `.dispose()` |
+
+#### Canonical Listener Cleanup Pattern
+
+Collect all `UnlistenFn` values in an array, push into it during `onMount`, then iterate in `onDestroy`. This pattern comes from `App.svelte` and is the standard across the codebase:
+
+```ts
+import { onMount, onDestroy } from 'svelte'
+import { listen } from '@tauri-apps/api/event'
+import type { UnlistenFn } from '@tauri-apps/api/event'
+
+let unlisteners: UnlistenFn[] = []
+
+onMount(async () => {
+  unlisteners.push(await listen('event-name', handler))
+})
+
+onDestroy(() => {
+  unlisteners.forEach(fn => fn())
+})
+```
+
+#### $effect Cleanup
+
+`$effect` can return a cleanup function that runs before the next execution or when the component is destroyed. Use this for reactive resources that need teardown:
+
+```ts
+$effect(() => {
+  const interval = setInterval(poll, 5000)
+  return () => clearInterval(interval)
+})
+```
+
+This keeps the setup and teardown logic co-located, which makes reactive cleanup easier to reason about than a separate `onDestroy` call.
 
 ### Styling
 
@@ -212,6 +500,39 @@ Strict mode enabled. Key settings: `noUnusedLocals`, `noUnusedParameters`,
 
 Tailwind CSS v4 + daisyUI v5. Configuration in `src/app.css` (CSS-first, no JS config files).
 Vite plugin: `@tailwindcss/vite` — must be listed BEFORE `svelte()` in `vite.config.ts` plugins.
+
+### Accessibility
+
+New components must meet these baseline requirements. This is not a full WCAG guide, just the structural conventions the codebase follows.
+
+**Semantic HTML** -- use the right element for the job:
+- `<button>` for clickable actions, `<a>` for navigation links, `<nav>` for navigation groups
+- `<header>` and `<main>` for page-level structure
+- Never use `<div>` or `<span>` as interactive elements without explicit ARIA roles
+
+**Keyboard navigation** -- all interactive elements must be reachable and operable without a mouse:
+- Tab moves focus to every interactive element; Enter/Space activates it
+- Escape closes modals, popovers, and dropdowns
+
+**ARIA attributes** -- required for dynamic and custom UI patterns:
+- Modals: `role="dialog"`, `aria-modal="true"`, `aria-labelledby` pointing to the modal header element
+- Listboxes/autocomplete: `role="listbox"` on the container, `role="option"` on each item, `aria-selected` on the active item
+- Async status updates (toasts, loading states): `aria-live="polite"` so screen readers announce changes without interrupting
+
+See `AutocompletePopover.svelte` for the listbox pattern and `Modal.svelte` for dialog semantics.
+
+**Focus management** -- focus must be predictable:
+- Modals trap focus: Tab cycles within the modal, not behind it
+- When a modal or dialog closes, focus returns to the element that triggered it
+- Auto-focus the primary input when a dialog opens
+
+**Labels** -- every form input needs a label:
+- Prefer a visible `<label>` element associated via `for`/`id`
+- Use `aria-label` when a visible label isn't practical (icon-only buttons, search inputs)
+
+**External links** -- follow the existing External Links convention:
+- Use the `openUrl()` IPC wrapper (never plain `<a target="_blank">`)
+- Add descriptive text or a `title` attribute so the link destination is clear
 
 ## Rust Conventions
 
