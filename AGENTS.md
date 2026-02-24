@@ -400,6 +400,70 @@ catch (e) {
 }
 ```
 
+
+### Lifecycle & Cleanup
+
+#### onMount vs $effect
+
+Both hooks run after the component mounts, but they serve different purposes.
+
+**`onMount`** -- one-time setup after the DOM is ready. Use it for:
+- Initial data loading that doesn't depend on reactive state
+- Initializing external libraries (e.g., xterm.js terminal instances)
+- Registering Tauri event listeners that need cleanup in `onDestroy`
+
+**`$effect`** -- reactive side effects that re-run whenever their dependencies change. Use it for:
+- Syncing derived state when a reactive value updates
+- Auto-focusing elements based on component state
+- Fetching data when a reactive dependency (prop, store, `$state`) changes
+
+Rule of thumb: if it depends on reactive state and should re-run, use `$effect`. If it runs once at mount time, use `onMount`.
+
+#### Cleanup Checklist
+
+Every component with side effects must clean up in `onDestroy`. Check each resource type:
+
+| Resource | Acquire | Release |
+|----------|---------|---------|
+| Tauri event listeners | `listen('event', handler)` -> store `UnlistenFn` | Call each `UnlistenFn` in `onDestroy` |
+| Window/document listeners | `addEventListener(...)` | `removeEventListener(...)` |
+| Timers | `setTimeout` / `setInterval` | `clearTimeout` / `clearInterval` |
+| Observers | `new ResizeObserver(...)` / `new IntersectionObserver(...)` | `.disconnect()` |
+| External library instances | e.g., `new Terminal()` | `.dispose()` |
+
+#### Canonical Listener Cleanup Pattern
+
+Collect all `UnlistenFn` values in an array, push into it during `onMount`, then iterate in `onDestroy`. This pattern comes from `App.svelte` and is the standard across the codebase:
+
+```ts
+import { onMount, onDestroy } from 'svelte'
+import { listen } from '@tauri-apps/api/event'
+import type { UnlistenFn } from '@tauri-apps/api/event'
+
+let unlisteners: UnlistenFn[] = []
+
+onMount(async () => {
+  unlisteners.push(await listen('event-name', handler))
+})
+
+onDestroy(() => {
+  unlisteners.forEach(fn => fn())
+})
+```
+
+#### $effect Cleanup
+
+`$effect` can return a cleanup function that runs before the next execution or when the component is destroyed. Use this for reactive resources that need teardown:
+
+```ts
+$effect(() => {
+  const interval = setInterval(poll, 5000)
+  return () => clearInterval(interval)
+})
+```
+
+This keeps the setup and teardown logic co-located, which makes reactive cleanup easier to reason about than a separate `onDestroy` call.
+
 ### Styling
 
 daisyUI v5 component classes + Tailwind CSS v4 utilities in markup. No component-scoped
