@@ -341,10 +341,8 @@ Never use plain `<a>` tags for external links.
 ```
 
 ### Error Handling (Frontend)
-
-try/catch in async functions. Log with `console.error`, set the `error` store for user-facing
+try/catch in async functions. Log with `console.error`, set the `$error` store for user-facing
 messages. Always include `finally` for loading states.
-
 ```ts
 async function loadTickets() {
   $isLoading = true
@@ -352,10 +350,53 @@ async function loadTickets() {
     $tickets = await getTickets()
   } catch (e) {
     console.error('Failed to load tickets:', e)
-    $error = String(e)
+    $error = 'Failed to load tickets. Please try again.'
   } finally {
     $isLoading = false
   }
+}
+```
+
+**Error message quality** -- the `$error` store displays values to users via the Toast component.
+Prefer human-readable messages over raw `String(e)`. Keep `console.error` with full technical
+details for debugging.
+
+```ts
+// Preferred: user-friendly message
+$error = 'Failed to load tasks. Please try again.'
+
+// Avoid: raw error string exposed to users
+$error = String(e)
+```
+
+Prefix `console.error` calls with the component name for easier log filtering:
+`console.error('[AgentPanel] Failed to fetch session:', e)`
+
+**Three-tier error handling** -- choose the right tier based on context:
+
+| Tier | When to use | Example |
+|------|-------------|---------|
+| `$error` store | User-initiated operations (button clicks, form submissions) | Loading tickets on demand, submitting a form |
+| Local `error` `$state` | Background loading within a component | Loading diffs in a panel, fetching inline data |
+| `console.error` only | Non-critical operations where the user doesn't need to know | Fetching session state after server resume |
+
+```ts
+// Tier 1: global $error store (user-initiated)
+catch (e) {
+  console.error('[MyComponent] Failed to submit:', e)
+  $error = 'Failed to submit. Please try again.'
+}
+
+// Tier 2: local $state (background loading in a component)
+let error = $state<string | null>(null)
+catch (e) {
+  console.error('[MyComponent] Failed to load diffs:', e)
+  error = 'Failed to load diffs.'
+}
+
+// Tier 3: silent (non-critical, user doesn't need to know)
+catch (e) {
+  console.error('[MyComponent] Failed to fetch session after resume:', e)
 }
 ```
 
