@@ -196,6 +196,10 @@ export async function spawnPty(taskId: string, serverPort: number, opencodeSessi
   return invoke<number>("pty_spawn", { taskId, serverPort, opencodeSessionId, cols, rows });
 }
 
+export async function spawnClaudePty(taskId: string, worktreePath: string, claudeSessionId: string, cols: number, rows: number): Promise<number> {
+  return invoke<number>("pty_spawn_claude", { taskId, worktreePath, claudeSessionId, cols, rows });
+}
+
 export async function writePty(taskId: string, data: string): Promise<void> {
   return invoke("pty_write", { taskId, data });
 }
