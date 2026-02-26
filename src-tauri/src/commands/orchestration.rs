@@ -167,16 +167,6 @@ pub async fn start_implementation(
     if provider == "claude-code" {
         let prompt = build_task_prompt(&task, "Implement this task. Create a branch, make the changes, and create a pull request when done.", additional_instructions.as_deref());
 
-        let (_, stdout) = claude_process_mgr
-            .spawn_claude(&task_id, &worktree_path, &prompt)
-            .await
-            .map_err(|e| e.to_string())?;
-
-        claude_bridge_mgr
-            .start_bridge(app.clone(), task_id.clone(), stdout)
-            .await
-            .map_err(|e| e.to_string())?;
-
         let agent_session_id = uuid::Uuid::new_v4().to_string();
         {
             let db = db.lock().unwrap();
@@ -190,6 +180,16 @@ pub async fn start_implementation(
             )
             .map_err(|e| format!("Failed to create agent session: {}", e))?;
         }
+
+        let (_, stdout) = claude_process_mgr
+            .spawn_claude(&task_id, &worktree_path, &prompt)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        claude_bridge_mgr
+            .start_bridge(app.clone(), task_id.clone(), stdout)
+            .await
+            .map_err(|e| e.to_string())?;
 
         {
             let db = db.lock().unwrap();
@@ -406,16 +406,6 @@ pub async fn run_action(
 
         let prompt = build_task_prompt(&task, &action_prompt, additional_instructions.as_deref());
 
-        let (_, stdout) = claude_process_mgr
-            .spawn_claude(&task_id, &worktree_path, &prompt)
-            .await
-            .map_err(|e| e.to_string())?;
-
-        claude_bridge_mgr
-            .start_bridge(app.clone(), task_id.clone(), stdout)
-            .await
-            .map_err(|e| e.to_string())?;
-
         let agent_session_id = uuid::Uuid::new_v4().to_string();
         {
             let db = db.lock().unwrap();
@@ -429,6 +419,16 @@ pub async fn run_action(
             )
             .map_err(|e| format!("Failed to create agent session: {}", e))?;
         }
+
+        let (_, stdout) = claude_process_mgr
+            .spawn_claude(&task_id, &worktree_path, &prompt)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        claude_bridge_mgr
+            .start_bridge(app.clone(), task_id.clone(), stdout)
+            .await
+            .map_err(|e| e.to_string())?;
 
         if task.status == "backlog" {
             let db = db.lock().unwrap();
