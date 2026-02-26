@@ -178,9 +178,14 @@
       // Claude Code live event rendering: write formatted events directly to terminal
       const currentSession = $activeSessions.get(taskId)
       if (currentSession?.provider === 'claude-code' && !ptyBridge.ptySpawned) {
-        const formatted = formatClaudeEvent(eventType, data)
-        if (formatted) {
-          termHandle.terminal?.write(formatted)
+        // Skip events that were already replayed from stored logs (dedup at seam)
+        if (lastReplayedTimestamp > 0 && event.payload.timestamp && event.payload.timestamp <= lastReplayedTimestamp + 2) {
+          // Event already replayed from stored logs — skip
+        } else {
+          const formatted = formatClaudeEvent(eventType, data)
+          if (formatted) {
+            termHandle.terminal?.write(formatted)
+          }
         }
       }
     })
