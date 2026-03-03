@@ -14,9 +14,9 @@ pub fn build_task_prompt(task: &db::TaskRow, action_instruction: &str, additiona
     
     prompt.push_str(&format!("Task: {}\n", task.title));
     
-    if let Some(ref desc) = task.jira_description {
-        if !desc.is_empty() {
-            prompt.push_str(&format!("Description:\n{}\n", desc));
+    if let Some(ref key) = task.jira_key {
+        if !key.is_empty() {
+            prompt.push_str(&format!("Jira: {}\n", key));
         }
     }
     
@@ -800,7 +800,7 @@ mod tests {
     }
 
     #[test]
-    fn test_build_task_prompt_with_jira_description() {
+    fn test_build_task_prompt_with_jira_key() {
         let task = db::TaskRow {
             id: "T-333".to_string(),
             title: "Feature with Jira context".to_string(),
@@ -819,24 +819,26 @@ mod tests {
         let prompt = build_task_prompt(&task, "Implement this task.", None);
 
         assert!(prompt.contains("Task: Feature with Jira context"));
-        assert!(prompt.contains("As a user I want to authenticate via JWT."));
+        assert!(prompt.contains("Jira: PROJ-42"));
+        assert!(!prompt.contains("Description:"));
+        assert!(!prompt.contains("authenticate via JWT"));
         assert!(prompt.contains("Plan:"));
         assert!(prompt.contains("Step 1: Implement API"));
         assert!(prompt.ends_with("Implement this task."));
     }
 
     #[test]
-    fn test_build_task_prompt_with_empty_jira_description() {
+    fn test_build_task_prompt_without_jira_key() {
         let task = db::TaskRow {
             id: "T-444".to_string(),
-            title: "Task with empty desc".to_string(),
+            title: "Task without jira".to_string(),
             plan_text: None,
             status: "backlog".to_string(),
-            jira_key: Some("PROJ-99".to_string()),
+            jira_key: None,
             jira_title: None,
             jira_status: None,
             jira_assignee: None,
-            jira_description: Some("".to_string()),
+            jira_description: None,
             project_id: None,
             created_at: 0,
             updated_at: 0,
@@ -844,8 +846,8 @@ mod tests {
 
         let prompt = build_task_prompt(&task, "Do it!", None);
 
-        assert!(prompt.contains("Task: Task with empty desc"));
-        assert!(!prompt.contains("Description:"));
+        assert!(prompt.contains("Task: Task without jira"));
+        assert!(!prompt.contains("Jira:"));
         assert!(prompt.ends_with("Do it!"));
     }
 
