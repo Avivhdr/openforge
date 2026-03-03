@@ -279,24 +279,4 @@ export async function setWhisperModel(modelSize: WhisperModelSizeId): Promise<vo
   return invoke<void>("set_whisper_model", { modelSize });
 }
 
-// ============================================================================
-// Claude CLI Session Commands
-// ============================================================================
-
-export async function resumeClaudeSdkSession(taskId: string, sessionId: string, cwd: string): Promise<void> {
-  return invoke<void>("resume_claude_sdk_session", { taskId, sessionId, cwd });
-}
-
-export async function sendClaudeInput(taskId: string, text: string): Promise<void> {
-  return invoke<void>("send_claude_input", { taskId, text });
-}
-
-export async function interruptClaudeSession(taskId: string): Promise<void> {
-  return invoke<void>("interrupt_claude_session", { taskId });
-}
-
-export async function respondToolApproval(taskId: string, requestId: string, behavior: string, message?: string): Promise<void> {
-  return invoke<void>("respond_tool_approval", { taskId, requestId, behavior, message: message ?? null });
-}
-
 

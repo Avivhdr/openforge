@@ -98,6 +98,20 @@ pub async fn create_task_handler(
     }))
 }
 
+pub(crate) fn map_hook_to_status(event_type: &str, current_status: &str) -> Option<String> {
+    match event_type {
+        "pre-tool-use" | "post-tool-use" => {
+            if current_status != "running" {
+                Some("running".to_string())
+            } else {
+                None
+            }
+        }
+        "stop" | "session-end" => Some("completed".to_string()),
+        _ => None,
+    }
+}
+
 async fn handle_hook(
     State(state): State<AppState>,
     Json(payload): Json<ClaudeHookPayload>,
@@ -113,6 +127,37 @@ async fn handle_hook(
                 "payload": payload_value
             })
         );
+
+        let status_update: Option<String> = {
+            let db = state.db.lock().unwrap();
+            if let Ok(Some(session)) = db.get_latest_session_for_ticket(task_id) {
+                if session.provider == "claude-code" {
+                    if let Some(new_status) = map_hook_to_status(event_type, &session.status) {
+                        if let Err(e) = db.update_agent_session(&session.id, &session.stage, &new_status, None, None) {
+                            eprintln!("[http_server] Failed to update session status for task {}: {}", task_id, e);
+                        }
+                        Some(new_status)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        };
+
+        if let Some(new_status) = status_update {
+            let _ = state.app.emit(
+                "agent-status-changed",
+                serde_json::json!({
+                    "task_id": task_id,
+                    "status": new_status,
+                    "provider": "claude-code"
+                })
+            );
+        }
     } else {
         eprintln!("[http_server] Warning: Hook event '{}' received without CLAUDE_TASK_ID", event_type);
     }
@@ -199,6 +244,59 @@ mod tests {
     // ========================================================================
     // CreateTaskRequest Tests
     // ========================================================================
+
+    // ========================================================================
+    // map_hook_to_status Tests
+    // ========================================================================
+
+    #[test]
+    fn test_pre_tool_use_transitions_from_non_running_to_running() {
+        assert_eq!(map_hook_to_status("pre-tool-use", "paused"), Some("running".to_string()));
+        assert_eq!(map_hook_to_status("pre-tool-use", "completed"), Some("running".to_string()));
+        assert_eq!(map_hook_to_status("pre-tool-use", "failed"), Some("running".to_string()));
+        assert_eq!(map_hook_to_status("pre-tool-use", "interrupted"), Some("running".to_string()));
+    }
+
+    #[test]
+    fn test_pre_tool_use_no_op_when_already_running() {
+        assert_eq!(map_hook_to_status("pre-tool-use", "running"), None);
+    }
+
+    #[test]
+    fn test_post_tool_use_transitions_from_non_running_to_running() {
+        assert_eq!(map_hook_to_status("post-tool-use", "paused"), Some("running".to_string()));
+        assert_eq!(map_hook_to_status("post-tool-use", "completed"), Some("running".to_string()));
+    }
+
+    #[test]
+    fn test_post_tool_use_no_op_when_already_running() {
+        assert_eq!(map_hook_to_status("post-tool-use", "running"), None);
+    }
+
+    #[test]
+    fn test_stop_always_maps_to_completed() {
+        assert_eq!(map_hook_to_status("stop", "running"), Some("completed".to_string()));
+        assert_eq!(map_hook_to_status("stop", "paused"), Some("completed".to_string()));
+        assert_eq!(map_hook_to_status("stop", "completed"), Some("completed".to_string()));
+    }
+
+    #[test]
+    fn test_session_end_always_maps_to_completed() {
+        assert_eq!(map_hook_to_status("session-end", "running"), Some("completed".to_string()));
+        assert_eq!(map_hook_to_status("session-end", "paused"), Some("completed".to_string()));
+    }
+
+    #[test]
+    fn test_notification_produces_no_status_change() {
+        assert_eq!(map_hook_to_status("notification", "running"), None);
+        assert_eq!(map_hook_to_status("notification", "paused"), None);
+    }
+
+    #[test]
+    fn test_unknown_event_type_produces_no_status_change() {
+        assert_eq!(map_hook_to_status("unknown-event", "running"), None);
+        assert_eq!(map_hook_to_status("", "running"), None);
+    }
 
     #[test]
     fn test_create_task_request_creation() {

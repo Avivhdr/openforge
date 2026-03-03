@@ -31,20 +31,23 @@ pub fn build_task_prompt(task: &db::TaskRow, action_instruction: &str, additiona
     db: &State<'_, Arc<Mutex<db::Database>>>,
     server_mgr: &State<'_, ServerManager>,
     sse_mgr: &State<'_, SseBridgeManager>,
+    pty_mgr: &State<'_, PtyManager>,
     task_id: &str,
 ) -> Result<(), String> {
-    // Get provider from latest session
-    let provider = {
+    let (provider, session) = {
         let db_lock = db.lock().unwrap();
-        db_lock.get_latest_session_for_ticket(task_id)
-            .ok()
-            .flatten()
-            .map(|s| s.provider)
-            .unwrap_or_else(|| "opencode".to_string())
+        let session = db_lock.get_latest_session_for_ticket(task_id).ok().flatten();
+        let provider = session.as_ref().map(|s| s.provider.clone()).unwrap_or_else(|| "opencode".to_string());
+        (provider, session)
     };
 
     if provider == "claude-code" {
-        return Err("Claude Code PTY not yet implemented".to_string());
+        let _ = pty_mgr.kill_pty(task_id).await;
+
+        if let Some(s) = session {
+            let db_lock = db.lock().unwrap();
+            let _ = db_lock.update_agent_session(&s.id, &s.stage, "interrupted", None, Some("Aborted by user"));
+        }
     } else {
         // OpenCode path - existing logic unchanged
         let port = server_mgr.get_server_port(task_id).await;
@@ -88,6 +91,7 @@ pub async fn start_implementation(
     db: State<'_, Arc<Mutex<db::Database>>>,
     server_mgr: State<'_, ServerManager>,
     sse_mgr: State<'_, SseBridgeManager>,
+    pty_mgr: State<'_, PtyManager>,
     app: tauri::AppHandle,
     task_id: String,
     repo_path: String,
@@ -144,7 +148,46 @@ pub async fn start_implementation(
     }
 
     if provider == "claude-code" {
-        return Err("Claude Code PTY not yet implemented".to_string());
+        let hooks_path = crate::claude_hooks::generate_hooks_settings(17422).map_err(|e| e.to_string())?;
+        let prompt = build_task_prompt(&task, "Implement this task. Create a branch, make the changes, and create a pull request when done.", additional_instructions.as_deref());
+
+        pty_mgr.spawn_claude_pty(
+            &task_id,
+            &worktree_path,
+            &prompt,
+            None,
+            &hooks_path,
+            80,
+            24,
+            app.clone(),
+        ).await.map_err(|e| e.to_string())?;
+
+        let agent_session_id = uuid::Uuid::new_v4().to_string();
+        {
+            let db = db.lock().unwrap();
+            db.create_agent_session(
+                &agent_session_id,
+                &task_id,
+                None,
+                "implementing",
+                "running",
+                "claude-code",
+            ).map_err(|e| format!("Failed to create agent session: {}", e))?;
+        }
+
+        if task.status == "backlog" {
+            let db = db.lock().unwrap();
+            db.update_task_status(&task_id, "doing")
+                .map_err(|e| format!("Failed to update task status: {}", e))?;
+        }
+        let _ = app.emit("task-changed", serde_json::json!({ "action": "updated", "task_id": task_id }));
+
+        return Ok(serde_json::json!({
+            "task_id": task_id,
+            "session_id": agent_session_id,
+            "worktree_path": worktree_path.to_str().unwrap(),
+            "port": 0,
+        }));
     } else {
         // OpenCode path - existing logic unchanged
         let port = server_mgr
@@ -212,6 +255,7 @@ pub async fn run_action(
     db: State<'_, Arc<Mutex<db::Database>>>,
     server_mgr: State<'_, ServerManager>,
     sse_mgr: State<'_, SseBridgeManager>,
+    pty_mgr: State<'_, PtyManager>,
     app: tauri::AppHandle,
     task_id: String,
     repo_path: String,
@@ -236,7 +280,134 @@ pub async fn run_action(
     };
 
     if provider == "claude-code" {
-        return Err("Claude Code PTY not yet implemented".to_string());
+        let existing_session = {
+            let db = db.lock().unwrap();
+            db.get_latest_session_for_ticket(&task_id)
+                .map_err(|e| format!("Failed to get latest session: {}", e))?
+        };
+
+        if let Some(ref session) = existing_session {
+            match session.status.as_str() {
+                "running" => return Err("Agent is busy".to_string()),
+                "paused" => return Err("Answer pending question first".to_string()),
+                "completed" | "failed" | "interrupted" => {
+                    if let Some(ref claude_session_id) = session.claude_session_id {
+                        let worktree = {
+                            let db = db.lock().unwrap();
+                            db.get_worktree_for_task(&task_id)
+                                .map_err(|e| format!("Failed to get worktree: {}", e))?
+                        };
+
+                        if let Some(w) = worktree {
+                            let hooks_path = crate::claude_hooks::generate_hooks_settings(17422).map_err(|e| e.to_string())?;
+
+                            pty_mgr.spawn_claude_pty(
+                                &task_id,
+                                std::path::Path::new(&w.worktree_path),
+                                &action_prompt,
+                                Some(claude_session_id),
+                                &hooks_path,
+                                80,
+                                24,
+                                app.clone(),
+                            ).await.map_err(|e| e.to_string())?;
+
+                            {
+                                let db = db.lock().unwrap();
+                                db.update_agent_session(&session.id, &session.stage, "running", None, None)
+                                    .map_err(|e| format!("Failed to update agent session: {}", e))?;
+                            }
+
+                            if task.status == "backlog" {
+                                let db = db.lock().unwrap();
+                                db.update_task_status(&task_id, "doing")
+                                    .map_err(|e| format!("Failed to update task status: {}", e))?;
+                                let _ = app.emit("task-changed", serde_json::json!({ "action": "updated", "task_id": task_id }));
+                            }
+
+                            return Ok(serde_json::json!({
+                                "task_id": task_id,
+                                "session_id": session.id,
+                                "worktree_path": w.worktree_path,
+                                "port": 0,
+                            }));
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let hooks_path = crate::claude_hooks::generate_hooks_settings(17422).map_err(|e| e.to_string())?;
+        let prompt = build_task_prompt(&task, &action_prompt, additional_instructions.as_deref());
+
+        let branch = git_worktree::slugify_branch_name(&task_id, &task.title);
+        let home = dirs::home_dir().ok_or("Failed to get home directory")?;
+        let repo_name = std::path::Path::new(&repo_path)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .ok_or("Invalid repo path")?;
+        let worktree_path = home
+            .join(".ai-command-center")
+            .join("worktrees")
+            .join(repo_name)
+            .join(&task_id);
+
+        git_worktree::create_worktree(
+            std::path::Path::new(&repo_path),
+            &worktree_path,
+            &branch,
+            "origin/main",
+        ).await.map_err(|e| e.to_string())?;
+
+        {
+            let db = db.lock().unwrap();
+            db.create_worktree_record(
+                &task_id,
+                &project_id_owned,
+                &repo_path,
+                worktree_path.to_str().unwrap(),
+                &branch,
+            ).map_err(|e| e.to_string())?;
+        }
+
+        pty_mgr.spawn_claude_pty(
+            &task_id,
+            &worktree_path,
+            &prompt,
+            None,
+            &hooks_path,
+            80,
+            24,
+            app.clone(),
+        ).await.map_err(|e| e.to_string())?;
+
+        let agent_session_id = uuid::Uuid::new_v4().to_string();
+        {
+            let db = db.lock().unwrap();
+            db.create_agent_session(
+                &agent_session_id,
+                &task_id,
+                None,
+                "implementing",
+                "running",
+                "claude-code",
+            ).map_err(|e| format!("Failed to create agent session: {}", e))?;
+        }
+
+        if task.status == "backlog" {
+            let db = db.lock().unwrap();
+            db.update_task_status(&task_id, "doing")
+                .map_err(|e| format!("Failed to update task status: {}", e))?;
+            let _ = app.emit("task-changed", serde_json::json!({ "action": "updated", "task_id": task_id }));
+        }
+
+        return Ok(serde_json::json!({
+            "task_id": task_id,
+            "worktree_path": worktree_path.to_str().unwrap(),
+            "port": 0,
+            "session_id": agent_session_id,
+        }));
     } else {
         // OpenCode path - existing logic unchanged
         let existing_session = {
@@ -416,15 +587,15 @@ pub async fn run_action(
 #[tauri::command]
 pub async fn abort_implementation(
     db: State<'_, Arc<Mutex<db::Database>>>,
-
     server_mgr: State<'_, ServerManager>,
     sse_mgr: State<'_, SseBridgeManager>,
     pty_mgr: State<'_, PtyManager>,
-    _app: tauri::AppHandle,
+    app: tauri::AppHandle,
     task_id: String,
 ) -> Result<(), String> {
-    let _ = pty_mgr.kill_pty(&task_id).await;
-    abort_task_agent(&db, &server_mgr, &sse_mgr, &task_id).await
+    abort_task_agent(&db, &server_mgr, &sse_mgr, &pty_mgr, &task_id).await?;
+    let _ = app.emit("task-changed", serde_json::json!({ "action": "updated", "task_id": task_id }));
+    Ok(())
 }
 
 #[cfg(test)]

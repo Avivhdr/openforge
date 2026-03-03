@@ -66,14 +66,15 @@ struct PtySession {
 pub struct PtyManager {
     sessions: Arc<Mutex<HashMap<String, PtySession>>>,
     pid_dir_override: Option<PathBuf>,
+    claude_last_output: Arc<Mutex<HashMap<String, Arc<AtomicU64>>>>,
 }
 
 impl PtyManager {
-    /// Creates a new PtyManager with an empty session map
     pub fn new() -> Self {
         Self {
             sessions: Arc::new(Mutex::new(HashMap::new())),
             pid_dir_override: None,
+            claude_last_output: Arc::new(Mutex::new(HashMap::new())),
         }
     }
     /// Spawns a new PTY process for the given task_id.
@@ -429,6 +430,13 @@ impl PtyManager {
         let pid_file = pid_dir.join(format!("{}-claude.pid", task_id));
         std::fs::write(&pid_file, pid.to_string())?;
 
+        let last_output_time = Arc::new(AtomicU64::new(0));
+        {
+            let mut times = self.claude_last_output.lock().await;
+            times.insert(task_id.to_string(), Arc::clone(&last_output_time));
+        }
+        let last_output_time_reader = Arc::clone(&last_output_time);
+
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Option<String>>();
 
         let task_id_reader = task_id.to_string();
@@ -445,6 +453,12 @@ impl PtyManager {
                         break;
                     }
                     Ok(n) => {
+                        let now_ms = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_millis() as u64;
+                        last_output_time_reader.store(now_ms, Ordering::Relaxed);
+
                         let mut data = if incomplete_utf8.is_empty() {
                             buffer[..n].to_vec()
                         } else {
@@ -620,6 +634,48 @@ impl PtyManager {
         }
     }
 
+    pub async fn interrupt_claude(&self, task_id: &str) -> Result<(), PtyError> {
+        let sessions = self.sessions.lock().await;
+
+        let session = sessions
+            .get(task_id)
+            .ok_or_else(|| PtyError::ProcessNotFound(task_id.to_string()))?;
+
+        let pid = session
+            .child
+            .process_id()
+            .ok_or_else(|| PtyError::ProcessNotFound(task_id.to_string()))?;
+
+        unsafe {
+            libc::kill(pid as i32, libc::SIGINT);
+        }
+
+        Ok(())
+    }
+
+    pub async fn check_claude_frozen(&self, task_id: &str) -> Option<u64> {
+        let pid = {
+            let sessions = self.sessions.lock().await;
+            let session = sessions.get(task_id)?;
+            session.child.process_id()?
+        };
+
+        let is_alive = unsafe { libc::kill(pid as i32, 0) == 0 };
+        if !is_alive {
+            return None;
+        }
+
+        let times = self.claude_last_output.lock().await;
+        let last_output_ms = times.get(task_id)?.load(Ordering::Relaxed);
+
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()?
+            .as_millis() as u64;
+
+        frozen_seconds(last_output_ms, now_ms)
+    }
+
     /// Cleans up stale PID files for processes that are no longer running
     pub fn cleanup_stale_pids(&self) -> Result<(), PtyError> {
         let pid_dir = self.get_pid_dir()?;
@@ -727,6 +783,22 @@ impl Default for PtyManager {
 impl PtyManager {
     pub fn set_pid_dir(&mut self, dir: PathBuf) {
         self.pid_dir_override = Some(dir);
+    }
+}
+
+// ============================================================================
+// Freeze Detection
+// ============================================================================
+
+fn frozen_seconds(last_output_ms: u64, now_ms: u64) -> Option<u64> {
+    if last_output_ms == 0 {
+        return None;
+    }
+    let elapsed_secs = now_ms.saturating_sub(last_output_ms) / 1000;
+    if elapsed_secs >= 15 {
+        Some(elapsed_secs)
+    } else {
+        None
     }
 }
 
@@ -1027,5 +1099,42 @@ mod tests {
 
         assert_eq!(session_pos, resume_pos + 1);
         assert!(prompt_pos > session_pos);
+    }
+
+    #[tokio::test]
+    async fn test_interrupt_claude_not_found() {
+        let manager = PtyManager::new();
+        let result = manager.interrupt_claude("nonexistent-task").await;
+        assert!(matches!(result, Err(PtyError::ProcessNotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn test_check_claude_frozen_not_found() {
+        let manager = PtyManager::new();
+        let result = manager.check_claude_frozen("nonexistent-task").await;
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_frozen_seconds_no_output_yet() {
+        assert!(frozen_seconds(0, 100_000_000).is_none());
+    }
+
+    #[test]
+    fn test_frozen_seconds_below_threshold() {
+        let now_ms: u64 = 100_000_000;
+        assert!(frozen_seconds(now_ms - 14_999, now_ms).is_none());
+    }
+
+    #[test]
+    fn test_frozen_seconds_at_threshold() {
+        let now_ms: u64 = 100_000_000;
+        assert_eq!(frozen_seconds(now_ms - 15_000, now_ms), Some(15));
+    }
+
+    #[test]
+    fn test_frozen_seconds_above_threshold() {
+        let now_ms: u64 = 100_000_000;
+        assert_eq!(frozen_seconds(now_ms - 60_000, now_ms), Some(60));
     }
 }

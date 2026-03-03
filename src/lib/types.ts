@@ -397,7 +397,7 @@ export interface SDKToolApprovalRequest {
   pending: boolean;
 }
 
-/** Full state of a Claude session (used by useClaudeSession composable) */
+/** Full state of a Claude session */
 export interface ClaudeSessionState {
   sessionId: string | null;
   status: 'idle' | 'running' | 'completed' | 'failed' | 'interrupted';
