@@ -27,6 +27,21 @@ pub struct AgentLogRow {
     pub content: String,
 }
 
+impl AgentSessionRow {
+    /// Whether this Claude Code session should be auto-resumed at app startup.
+    ///
+    /// Returns `true` only when all three conditions are met:
+    /// - provider is `"claude-code"`
+    /// - a `claude_session_id` was captured (needed for `--resume`)
+    /// - status is `"interrupted"` or `"paused"` (i.e. the session was actively
+    ///   in progress when the app was last closed)
+    pub fn is_resumable(&self) -> bool {
+        self.provider == "claude-code"
+            && self.claude_session_id.is_some()
+            && matches!(self.status.as_str(), "interrupted" | "paused")
+    }
+}
+
 impl super::Database {
     pub fn create_agent_session(
         &self,
@@ -300,6 +315,7 @@ impl super::Database {
 
 #[cfg(test)]
 mod tests {
+    use super::AgentSessionRow;
     use crate::db::test_helpers::*;
     use std::fs;
 
@@ -743,5 +759,65 @@ mod tests {
 
         drop(db);
         let _ = std::fs::remove_file(&path);
+    }
+
+    fn make_session(status: &str, provider: &str, claude_session_id: Option<&str>) -> AgentSessionRow {
+        AgentSessionRow {
+            id: "ses-1".to_string(),
+            ticket_id: "T-100".to_string(),
+            opencode_session_id: None,
+            stage: "implementing".to_string(),
+            status: status.to_string(),
+            checkpoint_data: None,
+            error_message: None,
+            created_at: 1000,
+            updated_at: 1000,
+            provider: provider.to_string(),
+            claude_session_id: claude_session_id.map(|s| s.to_string()),
+        }
+    }
+
+    #[test]
+    fn test_is_resumable_interrupted_with_session_id() {
+        let session = make_session("interrupted", "claude-code", Some("claude-ses-123"));
+        assert!(session.is_resumable(), "Interrupted Claude session with session ID should be resumable");
+    }
+
+    #[test]
+    fn test_is_resumable_paused_with_session_id() {
+        let session = make_session("paused", "claude-code", Some("claude-ses-123"));
+        assert!(session.is_resumable(), "Paused Claude session with session ID should be resumable");
+    }
+
+    #[test]
+    fn test_is_resumable_completed_not_resumable() {
+        let session = make_session("completed", "claude-code", Some("claude-ses-123"));
+        assert!(!session.is_resumable(), "Completed session should NOT be resumable");
+    }
+
+    #[test]
+    fn test_is_resumable_failed_not_resumable() {
+        let session = make_session("failed", "claude-code", Some("claude-ses-123"));
+        assert!(!session.is_resumable(), "Failed session should NOT be resumable");
+    }
+
+    #[test]
+    fn test_is_resumable_running_not_resumable() {
+        // After mark_running_sessions_interrupted, no sessions should be "running".
+        // If one somehow is, it shouldn't be resumed (it might be a stale state).
+        let session = make_session("running", "claude-code", Some("claude-ses-123"));
+        assert!(!session.is_resumable(), "Running session should NOT be resumable at startup");
+    }
+
+    #[test]
+    fn test_is_resumable_no_session_id() {
+        let session = make_session("interrupted", "claude-code", None);
+        assert!(!session.is_resumable(), "Session without claude_session_id should NOT be resumable");
+    }
+
+    #[test]
+    fn test_is_resumable_opencode_provider() {
+        let session = make_session("interrupted", "opencode", Some("claude-ses-123"));
+        assert!(!session.is_resumable(), "OpenCode session should NOT be resumable via Claude resume");
     }
 }
