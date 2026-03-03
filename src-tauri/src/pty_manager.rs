@@ -994,8 +994,9 @@ pub(crate) fn build_claude_args(
     if let Some(session_id) = resume_session_id {
         args.push("--resume".to_string());
         args.push(session_id.to_string());
+    } else {
+        args.push(prompt.to_string());
     }
-    args.push(prompt.to_string());
     args.push("--settings".to_string());
     args.push(hooks_settings_path.to_string_lossy().to_string());
     args
@@ -1168,12 +1169,12 @@ mod tests {
     fn test_build_claude_args_resume_session() {
         let settings = Path::new("/path/to/settings.json");
         let args = build_claude_args("continue work", Some("sess-abc-123"), settings);
+        // When resuming, prompt should NOT be included — just restore the session
         assert_eq!(
             args,
             vec![
                 "--resume",
                 "sess-abc-123",
-                "continue work",
                 "--settings",
                 "/path/to/settings.json",
             ]
@@ -1201,16 +1202,16 @@ mod tests {
     }
 
     #[test]
-    fn test_build_claude_args_resume_flag_before_prompt() {
+    fn test_build_claude_args_resume_omits_prompt() {
         let settings = Path::new("/config/hooks.json");
         let args = build_claude_args("my prompt", Some("session-xyz"), settings);
 
         let resume_pos = args.iter().position(|a| a == "--resume").unwrap();
         let session_pos = args.iter().position(|a| a == "session-xyz").unwrap();
-        let prompt_pos = args.iter().position(|a| a == "my prompt").unwrap();
 
         assert_eq!(session_pos, resume_pos + 1);
-        assert!(prompt_pos > session_pos);
+        // Prompt should not appear in args when resuming
+        assert!(!args.contains(&"my prompt".to_string()));
     }
 
     #[test]
@@ -1238,7 +1239,8 @@ mod tests {
         let args_resume = build_claude_args("continue impl", Some("resume-sess-999"), &temp_path);
         assert_eq!(args_resume[0], "--resume");
         assert_eq!(args_resume[1], "resume-sess-999");
-        assert_eq!(args_resume[2], "continue impl");
+        // Prompt should not be included when resuming
+        assert!(!args_resume.contains(&"continue impl".to_string()));
         let s_idx_r = args_resume.iter().position(|a| a == "--settings").unwrap();
         assert_eq!(args_resume[s_idx_r + 1], temp_path.to_string_lossy().to_string());
 
