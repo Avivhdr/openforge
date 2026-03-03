@@ -152,7 +152,8 @@ describe('AgentPanel (router)', () => {
     activeSessions.set(sessions)
 
     render(AgentPanel, { props: { taskId: 'T-1' } })
-    expect(screen.getByText(/Claude PTY terminal/)).toBeTruthy()
+    expect(screen.getByText('Implementing')).toBeTruthy()
+    expect(screen.getByText('running')).toBeTruthy()
   })
 })
 

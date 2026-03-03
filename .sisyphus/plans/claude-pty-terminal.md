@@ -787,7 +787,7 @@ Max Concurrent: 4 (Waves 1)
   - Files: `src-tauri/src/pty_manager.rs` (or `claude_pty.rs`)
   - Pre-commit: `cargo test`
 
-- [ ] 9. Rewrite ClaudeAgentPanel as xterm.js Terminal
+- [x] 9. Rewrite ClaudeAgentPanel as xterm.js Terminal
 
   **What to do**:
   - RED: Write vitest tests — component renders an xterm.js terminal, listens to `pty-output-{task_id}` events, writes data to terminal, sends user input to PTY via `writeToPty`
@@ -873,7 +873,7 @@ Max Concurrent: 4 (Waves 1)
   - Files: `src/components/ClaudeAgentPanel.svelte`, `src/components/ClaudeAgentPanel.test.ts`
   - Pre-commit: `pnpm test`
 
-- [ ] 10. Update AgentPanel Provider Routing
+- [x] 10. Update AgentPanel Provider Routing
 
   **What to do**:
   - RED: Write test — AgentPanel routes to ClaudeAgentPanel (now a terminal) when provider is "claude-code", routes to OpenCodeAgentPanel when provider is "opencode"
