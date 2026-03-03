@@ -104,8 +104,8 @@ struct PtySession {
 pub struct PtyManager {
     sessions: Arc<Mutex<HashMap<String, PtySession>>>,
     pid_dir_override: Option<PathBuf>,
-    claude_last_output: Arc<Mutex<HashMap<String, Arc<AtomicU64>>>>,
-    claude_output_buffers: Arc<Mutex<HashMap<String, Arc<std::sync::Mutex<RingBuffer>>>>>,
+    last_output: Arc<Mutex<HashMap<String, Arc<AtomicU64>>>>,
+    output_buffers: Arc<Mutex<HashMap<String, Arc<std::sync::Mutex<RingBuffer>>>>>,
 }
 
 impl PtyManager {
@@ -113,8 +113,8 @@ impl PtyManager {
         Self {
             sessions: Arc::new(Mutex::new(HashMap::new())),
             pid_dir_override: None,
-            claude_last_output: Arc::new(Mutex::new(HashMap::new())),
-            claude_output_buffers: Arc::new(Mutex::new(HashMap::new())),
+            last_output: Arc::new(Mutex::new(HashMap::new())),
+            output_buffers: Arc::new(Mutex::new(HashMap::new())),
         }
     }
     /// Spawns a new PTY process for the given task_id.
@@ -478,14 +478,14 @@ impl PtyManager {
 
         let last_output_time = Arc::new(AtomicU64::new(0));
         {
-            let mut times = self.claude_last_output.lock().await;
+            let mut times = self.last_output.lock().await;
             times.insert(task_id.to_string(), Arc::clone(&last_output_time));
         }
         let last_output_time_reader = Arc::clone(&last_output_time);
 
         let ring_buffer = Arc::new(std::sync::Mutex::new(RingBuffer::new(CLAUDE_BUFFER_CAPACITY)));
         {
-            let mut buffers = self.claude_output_buffers.lock().await;
+            let mut buffers = self.output_buffers.lock().await;
             buffers.insert(task_id.to_string(), Arc::clone(&ring_buffer));
         }
         let ring_buffer_emitter = Arc::clone(&ring_buffer);
@@ -670,14 +670,23 @@ impl PtyManager {
         if let Some(mut session) = sessions.remove(task_id) {
             println!("Killing PTY for task {}", task_id);
 
-            // Best effort kill
             let _ = session.child.kill();
 
-            // Remove PID file
             let pid_file = self.get_pid_dir()?.join(format!("{}-pty.pid", task_id));
             let _ = std::fs::remove_file(pid_file);
 
             println!("PTY for task {} killed", task_id);
+        }
+
+        drop(sessions);
+
+        {
+            let mut buffers = self.output_buffers.lock().await;
+            buffers.remove(task_id);
+        }
+        {
+            let mut times = self.last_output.lock().await;
+            times.remove(task_id);
         }
 
         Ok(())
@@ -728,7 +737,7 @@ impl PtyManager {
             return None;
         }
 
-        let times = self.claude_last_output.lock().await;
+        let times = self.last_output.lock().await;
         let last_output_ms = times.get(task_id)?.load(Ordering::Relaxed);
 
         let now_ms = std::time::SystemTime::now()
@@ -739,8 +748,8 @@ impl PtyManager {
         frozen_seconds(last_output_ms, now_ms)
     }
 
-    pub async fn get_claude_pty_buffer(&self, task_id: &str) -> Option<String> {
-        let buffers = self.claude_output_buffers.lock().await;
+    pub async fn get_pty_buffer(&self, task_id: &str) -> Option<String> {
+        let buffers = self.output_buffers.lock().await;
         let buffer = buffers.get(task_id)?;
         let buf = buffer.lock().unwrap();
         let content = buf.snapshot();
@@ -1040,9 +1049,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_claude_pty_buffer_not_found() {
+    async fn test_get_pty_buffer_not_found() {
         let manager = PtyManager::new();
-        let result = manager.get_claude_pty_buffer("nonexistent-task").await;
+        let result = manager.get_pty_buffer("nonexistent-task").await;
         assert!(result.is_none());
     }
 
@@ -1376,7 +1385,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_claude_pty_buffer_returns_snapshot() {
+    async fn test_get_pty_buffer_returns_snapshot() {
         let manager = PtyManager::new();
         let ring = Arc::new(std::sync::Mutex::new(RingBuffer::new(1024)));
         {
@@ -1384,13 +1393,58 @@ mod tests {
             buf.push(b"test output data");
         }
         {
-            let mut buffers = manager.claude_output_buffers.lock().await;
+            let mut buffers = manager.output_buffers.lock().await;
             buffers.insert("task-snap".to_string(), Arc::clone(&ring));
         }
-        let first = manager.get_claude_pty_buffer("task-snap").await;
+        let first = manager.get_pty_buffer("task-snap").await;
         assert_eq!(first, Some("test output data".to_string()));
-        // Second call should still return the same data (snapshot, not drain)
-        let second = manager.get_claude_pty_buffer("task-snap").await;
+        let second = manager.get_pty_buffer("task-snap").await;
         assert_eq!(second, Some("test output data".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_kill_pty_cleans_output_buffers() {
+        let mut manager = PtyManager::new();
+        let tmp_dir = std::env::temp_dir().join("test_kill_pty_cleanup_buffers");
+        std::fs::create_dir_all(&tmp_dir).unwrap();
+        manager.set_pid_dir(tmp_dir.clone());
+
+        let task_id = "cleanup-test-task";
+
+        let ring = Arc::new(std::sync::Mutex::new(RingBuffer::new(1024)));
+        {
+            let mut buf = ring.lock().unwrap();
+            buf.push(b"some output");
+        }
+        {
+            let mut buffers = manager.output_buffers.lock().await;
+            buffers.insert(task_id.to_string(), Arc::clone(&ring));
+        }
+        {
+            let mut times = manager.last_output.lock().await;
+            times.insert(task_id.to_string(), Arc::new(AtomicU64::new(12345)));
+        }
+
+        {
+            let buffers = manager.output_buffers.lock().await;
+            assert!(buffers.contains_key(task_id), "buffer entry should exist before kill");
+        }
+        {
+            let times = manager.last_output.lock().await;
+            assert!(times.contains_key(task_id), "last_output entry should exist before kill");
+        }
+
+        let _ = manager.kill_pty(task_id).await;
+
+        {
+            let buffers = manager.output_buffers.lock().await;
+            assert!(!buffers.contains_key(task_id), "output_buffers should be cleaned up after kill_pty");
+        }
+        {
+            let times = manager.last_output.lock().await;
+            assert!(!times.contains_key(task_id), "last_output should be cleaned up after kill_pty");
+        }
+
+        let _ = std::fs::remove_dir_all(&tmp_dir);
     }
 }
