@@ -12,7 +12,8 @@ pub fn build_task_prompt(task: &db::TaskRow, action_instruction: &str, additiona
         }
     }
     
-    prompt.push_str(&format!("Task: {}\n", task.title));
+    prompt.push_str(&task.title);
+    prompt.push('\n');
     
     if let Some(ref key) = task.jira_key {
         if !key.is_empty() {
@@ -675,7 +676,7 @@ mod tests {
 
         let prompt = build_task_prompt(&task, "Do the thing!", None);
         
-        assert!(prompt.contains("Task: Test Task"));
+        assert!(prompt.contains("Test Task"));
         assert!(prompt.contains("Plan:"));
         assert!(prompt.contains("Step 1: Do this"));
         assert!(prompt.ends_with("Do the thing!"));
@@ -700,7 +701,7 @@ mod tests {
 
         let prompt = build_task_prompt(&task, "Execute now!", None);
         
-        assert!(prompt.contains("Task: Minimal Task"));
+        assert!(prompt.contains("Minimal Task"));
         assert!(!prompt.contains("Plan:"));
         assert!(prompt.ends_with("Execute now!"));
     }
@@ -724,7 +725,7 @@ mod tests {
 
         let prompt = build_task_prompt(&task, "Run test!", None);
         
-        assert!(prompt.contains("Task: Empty Fields Task"));
+        assert!(prompt.contains("Empty Fields Task"));
         assert!(!prompt.contains("Plan:"));
         assert!(prompt.ends_with("Run test!"));
     }
@@ -749,7 +750,7 @@ mod tests {
         let prompt = build_task_prompt(&task, "Do the thing!", Some("Always use TypeScript strict mode.\nFollow the project coding standards."));
         
         assert!(prompt.starts_with("Always use TypeScript strict mode."));
-        assert!(prompt.contains("Task: Instructions Task"));
+        assert!(prompt.contains("Instructions Task"));
         assert!(prompt.contains("Plan:\n"));
         assert!(prompt.ends_with("Do the thing!"));
     }
@@ -796,7 +797,7 @@ mod tests {
 
         let prompt = build_task_prompt(&task, "Do the thing!", None);
         
-        assert!(prompt.starts_with("Task:"));
+        assert!(prompt.starts_with("None Instructions Task"));
     }
 
     #[test]
@@ -818,7 +819,7 @@ mod tests {
 
         let prompt = build_task_prompt(&task, "Implement this task.", None);
 
-        assert!(prompt.contains("Task: Feature with Jira context"));
+        assert!(prompt.contains("Feature with Jira context"));
         assert!(prompt.contains("Jira: PROJ-42"));
         assert!(!prompt.contains("Description:"));
         assert!(!prompt.contains("authenticate via JWT"));
@@ -846,7 +847,7 @@ mod tests {
 
         let prompt = build_task_prompt(&task, "Do it!", None);
 
-        assert!(prompt.contains("Task: Task without jira"));
+        assert!(prompt.contains("Task without jira"));
         assert!(!prompt.contains("Jira:"));
         assert!(prompt.ends_with("Do it!"));
     }
@@ -871,6 +872,6 @@ mod tests {
         let prompt = build_task_prompt(&task, "Go!", None);
 
         assert!(!prompt.contains("T-555"));
-        assert!(prompt.contains("Task: No ID in prompt"));
+        assert!(prompt.contains("No ID in prompt"));
     }
 }
