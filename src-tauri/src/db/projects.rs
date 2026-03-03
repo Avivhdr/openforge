@@ -11,7 +11,6 @@ pub struct ProjectRow {
     pub updated_at: i64,
 }
 
-
 /// Attention summary for a project (cross-domain aggregation)
 #[derive(Debug, Clone, Serialize)]
 pub struct ProjectAttentionRow {
@@ -186,7 +185,7 @@ impl super::Database {
             "SELECT p.id, p.name, p.path, p.created_at, p.updated_at
              FROM projects p
              JOIN project_config pc ON p.id = pc.project_id
-             WHERE pc.key = 'github_default_repo' AND pc.value = ?1"
+             WHERE pc.key = 'github_default_repo' AND pc.value = ?1",
         )?;
         let mut rows = stmt.query([repo_full_name])?;
         if let Some(row) = rows.next()? {
@@ -244,14 +243,17 @@ impl super::Database {
 
             for row in rows {
                 let (project_id, needs_input, running_agents, completed_agents) = row?;
-                let entry = attention.entry(project_id.clone()).or_insert_with(|| ProjectAttentionRow {
-                    project_id,
-                    needs_input: 0,
-                    running_agents: 0,
-                    ci_failures: 0,
-                    unaddressed_comments: 0,
-                    completed_agents: 0,
-                });
+                let entry =
+                    attention
+                        .entry(project_id.clone())
+                        .or_insert_with(|| ProjectAttentionRow {
+                            project_id,
+                            needs_input: 0,
+                            running_agents: 0,
+                            ci_failures: 0,
+                            unaddressed_comments: 0,
+                            completed_agents: 0,
+                        });
                 entry.needs_input = needs_input;
                 entry.running_agents = running_agents;
                 entry.completed_agents = completed_agents;
@@ -270,7 +272,7 @@ impl super::Database {
                 FROM pull_requests pr
                 JOIN tasks t ON t.id = pr.ticket_id
                 WHERE t.project_id IS NOT NULL AND pr.state = 'open'
-                GROUP BY t.project_id"
+                GROUP BY t.project_id",
             )?;
 
             let rows = stmt.query_map([], |row| {
@@ -283,14 +285,17 @@ impl super::Database {
 
             for row in rows {
                 let (project_id, ci_failures, unaddressed_comments) = row?;
-                let entry = attention.entry(project_id.clone()).or_insert_with(|| ProjectAttentionRow {
-                    project_id,
-                    needs_input: 0,
-                    running_agents: 0,
-                    ci_failures: 0,
-                    unaddressed_comments: 0,
-                    completed_agents: 0,
-                });
+                let entry =
+                    attention
+                        .entry(project_id.clone())
+                        .or_insert_with(|| ProjectAttentionRow {
+                            project_id,
+                            needs_input: 0,
+                            running_agents: 0,
+                            ci_failures: 0,
+                            unaddressed_comments: 0,
+                            completed_agents: 0,
+                        });
                 entry.ci_failures = ci_failures;
                 entry.unaddressed_comments = unaddressed_comments;
             }
@@ -375,7 +380,10 @@ mod tests {
 
         let summaries = db.get_project_attention_summaries().expect("query failed");
         // No doing tasks, no PRs — should return empty
-        assert!(summaries.is_empty(), "Expected no attention rows for project with no doing tasks");
+        assert!(
+            summaries.is_empty(),
+            "Expected no attention rows for project with no doing tasks"
+        );
 
         // Create a backlog task — still no attention since it's not 'doing'
         db.create_task("Backlog task", "backlog", None, Some(&project.id), None)
@@ -401,8 +409,14 @@ mod tests {
             .expect("create task failed");
         db.create_agent_session("ses-1", &task1.id, None, "implement", "paused", "opencode")
             .expect("create session failed");
-        db.update_agent_session("ses-1", "implement", "paused", Some("{\"q\":\"approve?\"}"), None)
-            .expect("update session failed");
+        db.update_agent_session(
+            "ses-1",
+            "implement",
+            "paused",
+            Some("{\"q\":\"approve?\"}"),
+            None,
+        )
+        .expect("update session failed");
 
         // Create a doing task with a running agent
         let task2 = db
@@ -415,22 +429,52 @@ mod tests {
         let task4 = db
             .create_task("Doing task 4", "doing", None, Some(&project.id), None)
             .expect("create task failed");
-        db.create_agent_session("ses-4", &task4.id, None, "implement", "completed", "opencode")
-            .expect("create session failed");
+        db.create_agent_session(
+            "ses-4",
+            &task4.id,
+            None,
+            "implement",
+            "completed",
+            "opencode",
+        )
+        .expect("create session failed");
 
         // Create a doing task with an open PR that has CI failure + unaddressed comment
         let task3 = db
             .create_task("Doing task 3", "doing", None, Some(&project.id), None)
             .expect("create task failed");
-        db.insert_pull_request(42, &task3.id, "acme", "repo", "Fix", "https://example.com", "open", 1000, 1000)
-            .expect("insert pr failed");
+        db.insert_pull_request(
+            42,
+            &task3.id,
+            "acme",
+            "repo",
+            "Fix",
+            "https://example.com",
+            "open",
+            1000,
+            1000,
+        )
+        .expect("insert pr failed");
         db.update_pr_ci_status(42, "sha1", "failure", "[]")
             .expect("update ci failed");
-        db.insert_pr_comment(501, 42, "reviewer", "Fix this", "review", Some("main.rs"), Some(10), false, 2000)
-            .expect("insert comment failed");
+        db.insert_pr_comment(
+            501,
+            42,
+            "reviewer",
+            "Fix this",
+            "review",
+            Some("main.rs"),
+            Some(10),
+            false,
+            2000,
+        )
+        .expect("insert comment failed");
 
         let summaries = db.get_project_attention_summaries().expect("query failed");
-        let summary = summaries.iter().find(|s| s.project_id == project.id).expect("project not found");
+        let summary = summaries
+            .iter()
+            .find(|s| s.project_id == project.id)
+            .expect("project not found");
 
         assert_eq!(summary.needs_input, 1);
         assert_eq!(summary.running_agents, 1);
@@ -446,21 +490,28 @@ mod tests {
     fn test_find_project_by_github_repo() {
         let (db, path) = make_test_db("find_by_repo");
         // Create a project
-        let project_id = db.create_project("My Project", "/path/to/project").expect("create failed");
+        let project_id = db
+            .create_project("My Project", "/path/to/project")
+            .expect("create failed");
         // Set github_default_repo config
-        db.set_project_config(&project_id.id, "github_default_repo", "facebook/react").expect("set config failed");
-        
+        db.set_project_config(&project_id.id, "github_default_repo", "facebook/react")
+            .expect("set config failed");
+
         // Should find the project
-        let found = db.find_project_by_github_repo("facebook/react").expect("find failed");
+        let found = db
+            .find_project_by_github_repo("facebook/react")
+            .expect("find failed");
         assert!(found.is_some());
         let found = found.unwrap();
         assert_eq!(found.id, project_id.id);
         assert_eq!(found.path, "/path/to/project");
-        
+
         // Should NOT find with different repo
-        let not_found = db.find_project_by_github_repo("unknown/repo").expect("find failed");
+        let not_found = db
+            .find_project_by_github_repo("unknown/repo")
+            .expect("find failed");
         assert!(not_found.is_none());
-        
+
         drop(db);
         let _ = std::fs::remove_file(&path);
     }

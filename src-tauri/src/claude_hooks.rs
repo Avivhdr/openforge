@@ -13,7 +13,7 @@ pub fn get_http_server_port() -> u16 {
 
 pub fn generate_hooks_settings(port: u16) -> Result<PathBuf, Box<dyn std::error::Error>> {
     let home = dirs::home_dir().ok_or("Could not determine home directory")?;
-    let settings_dir = home.join(".ai-command-center");
+    let settings_dir = home.join(".openforge");
     let settings_path = settings_dir.join("claude-hooks-settings.json");
 
     fs::create_dir_all(&settings_dir)?;
@@ -183,9 +183,19 @@ mod tests {
         assert!(json["hooks"].get("Notification").is_some());
         // Notification should have two entries: permission matcher + catch-all
         let notification = &json["hooks"]["Notification"];
-        assert_eq!(notification.as_array().unwrap().len(), 2, "Notification should have 2 entries");
-        assert!(notification[0].get("matcher").is_some(), "First entry should have a matcher");
-        assert!(notification[1].get("matcher").is_none(), "Second entry should be catch-all (no matcher)");
+        assert_eq!(
+            notification.as_array().unwrap().len(),
+            2,
+            "Notification should have 2 entries"
+        );
+        assert!(
+            notification[0].get("matcher").is_some(),
+            "First entry should have a matcher"
+        );
+        assert!(
+            notification[1].get("matcher").is_none(),
+            "Second entry should be catch-all (no matcher)"
+        );
     }
 
     #[test]
@@ -222,7 +232,7 @@ mod tests {
         let _ = fs::remove_dir_all(&temp_dir);
         fs::create_dir_all(&temp_dir).unwrap();
 
-        let settings_dir = temp_dir.join(".ai-command-center");
+        let settings_dir = temp_dir.join(".openforge");
         let _settings_path = settings_dir.join("claude-hooks-settings.json");
 
         let home_backup = std::env::var("HOME").ok();
@@ -354,7 +364,12 @@ mod tests {
                 expected_route,
                 cmd
             );
-            assert!(cmd.contains("curl"), "{}[{}] command should use curl", hook_key, idx);
+            assert!(
+                cmd.contains("curl"),
+                "{}[{}] command should use curl",
+                hook_key,
+                idx
+            );
             assert!(
                 cmd.contains("-X POST"),
                 "{}[{}] command should be a POST",

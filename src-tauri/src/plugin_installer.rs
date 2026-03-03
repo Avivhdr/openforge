@@ -6,7 +6,7 @@ const CREATE_TASK_TOOL: &str = r#"import { tool } from "@opencode-ai/plugin"
 
 export default tool({
   name: "create_task",
-  description: "Create a new task in the AI Command Center. Use this when you need to create follow-up work or break a task into subtasks. The task will be added to the backlog for later implementation.",
+  description: "Create a new task in Open Forge. Use this when you need to create follow-up work or break a task into subtasks. The task will be added to the backlog for later implementation.",
   args: {
     title: tool.schema.string().describe("Short, descriptive title for the task (e.g., 'Implement user authentication')"),
     description: tool.schema.string().describe("Detailed description of what needs to be done. Will be stored as the task plan for later implementation."),
@@ -37,7 +37,7 @@ export default tool({
       return `Task created successfully: ${data.task_id}. It has been added to the backlog and can be started manually when ready.`
     } catch (e) {
       const errorMessage = e instanceof Error ? e.message : String(e)
-      return `Error creating task: ${errorMessage}. Is the AI Command Center running?`
+      return `Error creating task: ${errorMessage}. Is Open Forge running?`
     }
   },
 })

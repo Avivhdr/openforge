@@ -409,11 +409,25 @@ mod tests {
         let (db, path) = make_test_db("review_pr_viewed_null");
 
         db.upsert_review_pr(
-            1, 10, "PR 1", None, "open", false,
+            1,
+            10,
+            "PR 1",
+            None,
+            "open",
+            false,
             "https://github.com/owner/repo/pull/10",
-            "user1", None, "owner", "repo",
-            "branch1", "main", "sha1",
-            10, 5, 2, 1000, 2000,
+            "user1",
+            None,
+            "owner",
+            "repo",
+            "branch1",
+            "main",
+            "sha1",
+            10,
+            5,
+            2,
+            1000,
+            2000,
         )
         .expect("upsert failed");
 
@@ -431,15 +445,30 @@ mod tests {
         let (db, path) = make_test_db("review_pr_mark_viewed");
 
         db.upsert_review_pr(
-            1, 10, "PR 1", None, "open", false,
+            1,
+            10,
+            "PR 1",
+            None,
+            "open",
+            false,
             "https://github.com/owner/repo/pull/10",
-            "user1", None, "owner", "repo",
-            "branch1", "main", "sha1",
-            10, 5, 2, 1000, 2000,
+            "user1",
+            None,
+            "owner",
+            "repo",
+            "branch1",
+            "main",
+            "sha1",
+            10,
+            5,
+            2,
+            1000,
+            2000,
         )
         .expect("upsert failed");
 
-        db.mark_review_pr_viewed(1, "sha1").expect("mark viewed failed");
+        db.mark_review_pr_viewed(1, "sha1")
+            .expect("mark viewed failed");
 
         let prs = db.get_all_review_prs().expect("get_all failed");
         assert_eq!(prs.len(), 1);
@@ -455,26 +484,55 @@ mod tests {
         let (db, path) = make_test_db("review_pr_preserve_viewed");
 
         db.upsert_review_pr(
-            1, 10, "PR 1", None, "open", false,
+            1,
+            10,
+            "PR 1",
+            None,
+            "open",
+            false,
             "https://github.com/owner/repo/pull/10",
-            "user1", None, "owner", "repo",
-            "branch1", "main", "abc",
-            10, 5, 2, 1000, 2000,
+            "user1",
+            None,
+            "owner",
+            "repo",
+            "branch1",
+            "main",
+            "abc",
+            10,
+            5,
+            2,
+            1000,
+            2000,
         )
         .expect("upsert failed");
 
-        db.mark_review_pr_viewed(1, "abc").expect("mark viewed failed");
+        db.mark_review_pr_viewed(1, "abc")
+            .expect("mark viewed failed");
 
         let prs_before = db.get_all_review_prs().expect("get_all failed");
         let viewed_at_before = prs_before[0].viewed_at;
 
         // Upsert again with same sha
         db.upsert_review_pr(
-            1, 10, "PR 1 updated", None, "open", false,
+            1,
+            10,
+            "PR 1 updated",
+            None,
+            "open",
+            false,
             "https://github.com/owner/repo/pull/10",
-            "user1", None, "owner", "repo",
-            "branch1", "main", "abc",
-            10, 5, 2, 1000, 3000,
+            "user1",
+            None,
+            "owner",
+            "repo",
+            "branch1",
+            "main",
+            "abc",
+            10,
+            5,
+            2,
+            1000,
+            3000,
         )
         .expect("re-upsert failed");
 
@@ -492,23 +550,52 @@ mod tests {
         let (db, path) = make_test_db("review_pr_clear_viewed");
 
         db.upsert_review_pr(
-            1, 10, "PR 1", None, "open", false,
+            1,
+            10,
+            "PR 1",
+            None,
+            "open",
+            false,
             "https://github.com/owner/repo/pull/10",
-            "user1", None, "owner", "repo",
-            "branch1", "main", "abc",
-            10, 5, 2, 1000, 2000,
+            "user1",
+            None,
+            "owner",
+            "repo",
+            "branch1",
+            "main",
+            "abc",
+            10,
+            5,
+            2,
+            1000,
+            2000,
         )
         .expect("upsert failed");
 
-        db.mark_review_pr_viewed(1, "abc").expect("mark viewed failed");
+        db.mark_review_pr_viewed(1, "abc")
+            .expect("mark viewed failed");
 
         // Upsert again with different sha
         db.upsert_review_pr(
-            1, 10, "PR 1", None, "open", false,
+            1,
+            10,
+            "PR 1",
+            None,
+            "open",
+            false,
             "https://github.com/owner/repo/pull/10",
-            "user1", None, "owner", "repo",
-            "branch1", "main", "def",
-            10, 5, 2, 1000, 3000,
+            "user1",
+            None,
+            "owner",
+            "repo",
+            "branch1",
+            "main",
+            "def",
+            10,
+            5,
+            2,
+            1000,
+            3000,
         )
         .expect("re-upsert failed");
 
@@ -526,21 +613,49 @@ mod tests {
         let (db, path) = make_test_db("review_pr_never_viewed");
 
         db.upsert_review_pr(
-            1, 10, "PR 1", None, "open", false,
+            1,
+            10,
+            "PR 1",
+            None,
+            "open",
+            false,
             "https://github.com/owner/repo/pull/10",
-            "user1", None, "owner", "repo",
-            "branch1", "main", "abc",
-            10, 5, 2, 1000, 2000,
+            "user1",
+            None,
+            "owner",
+            "repo",
+            "branch1",
+            "main",
+            "abc",
+            10,
+            5,
+            2,
+            1000,
+            2000,
         )
         .expect("upsert failed");
 
         // Never mark as viewed, upsert with new sha
         db.upsert_review_pr(
-            1, 10, "PR 1", None, "open", false,
+            1,
+            10,
+            "PR 1",
+            None,
+            "open",
+            false,
             "https://github.com/owner/repo/pull/10",
-            "user1", None, "owner", "repo",
-            "branch1", "main", "new-sha",
-            10, 5, 2, 1000, 3000,
+            "user1",
+            None,
+            "owner",
+            "repo",
+            "branch1",
+            "main",
+            "new-sha",
+            10,
+            5,
+            2,
+            1000,
+            3000,
         )
         .expect("re-upsert failed");
 
@@ -584,7 +699,8 @@ mod tests {
         }
 
         // Mark PR 2 as viewed
-        db.mark_review_pr_viewed(2, "sha2").expect("mark viewed failed");
+        db.mark_review_pr_viewed(2, "sha2")
+            .expect("mark viewed failed");
 
         let prs = db.get_all_review_prs().expect("get_all failed");
         assert_eq!(prs.len(), 3);

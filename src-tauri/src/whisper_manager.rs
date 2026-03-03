@@ -31,7 +31,7 @@ use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextPar
 // Constants
 // ============================================================================
 
-const APP_DIR_NAME: &str = "ai-command-center";
+const APP_DIR_NAME: &str = "openforge";
 const MODELS_SUBDIR: &str = "models";
 
 // ============================================================================
@@ -290,7 +290,7 @@ impl WhisperManager {
 
     /// Return the expected on-disk path for a model file of the given size.
     ///
-    /// Path: `$DATA_DIR/ai-command-center/models/<filename>`
+    /// Path: `$DATA_DIR/openforge/models/<filename>`
     fn model_file_path_for(size: WhisperModelSize) -> Option<PathBuf> {
         let spec = size.spec();
         dirs::data_dir().map(|d| d.join(APP_DIR_NAME).join(MODELS_SUBDIR).join(spec.filename))

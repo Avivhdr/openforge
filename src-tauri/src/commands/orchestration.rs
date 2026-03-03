@@ -119,7 +119,7 @@ pub async fn start_implementation(
         .and_then(|n| n.to_str())
         .ok_or("Invalid repo path")?;
     let worktree_path = home
-        .join(".ai-command-center")
+        .join(".openforge")
         .join("worktrees")
         .join(repo_name)
         .join(&task_id);
@@ -350,7 +350,7 @@ pub async fn run_action(
             .and_then(|n| n.to_str())
             .ok_or("Invalid repo path")?;
         let worktree_path = home
-            .join(".ai-command-center")
+            .join(".openforge")
             .join("worktrees")
             .join(repo_name)
             .join(&task_id);
@@ -518,7 +518,7 @@ pub async fn run_action(
             .and_then(|n| n.to_str())
             .ok_or("Invalid repo path")?;
         let worktree_path = home
-            .join(".ai-command-center")
+            .join(".openforge")
             .join("worktrees")
             .join(repo_name)
             .join(&task_id);

@@ -229,7 +229,7 @@ pub async fn get_file_at_ref(
     let response = reqwest::Client::new()
         .get(&url)
         .header("Authorization", format!("token {}", token))
-        .header("User-Agent", "ai-command-center")
+        .header("User-Agent", "openforge")
         .send()
         .await
         .map_err(|e| format!("Network error: {}", e))?;

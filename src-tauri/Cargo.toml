@@ -1,7 +1,7 @@
 [package]
-name = "ai-command-center"
+name = "openforge"
 version = "0.0.1"
-description = "AI Command Center - Desktop application for managing AI workflows"
+description = "Open Forge - Desktop application for managing AI workflows"
 authors = ["OpenCode"]
 edition = "2021"
 rust-version = "1.60"

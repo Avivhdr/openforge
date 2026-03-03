@@ -840,7 +840,7 @@ impl PtyManager {
             ))
         })?;
         let pids_dir_name = if cfg!(debug_assertions) { "pids-dev" } else { "pids" };
-        Ok(home.join(".ai-command-center").join(pids_dir_name))
+        Ok(home.join(".openforge").join(pids_dir_name))
     }
 }
 
@@ -1145,21 +1145,21 @@ mod tests {
         let dir_name = pid_dir.file_name().unwrap().to_str().unwrap();
         assert_eq!(dir_name, "pids-dev", "Debug build should use pids-dev directory");
         
-        // Verify parent is .ai-command-center
+        // Verify parent is .openforge
         let parent_name = pid_dir.parent().unwrap().file_name().unwrap().to_str().unwrap();
-        assert_eq!(parent_name, ".ai-command-center");
+        assert_eq!(parent_name, ".openforge");
     }
 
     #[test]
     fn test_build_claude_args_new_session() {
-        let settings = Path::new("/home/user/.ai-command-center/claude-hooks-settings.json");
+        let settings = Path::new("/home/user/.openforge/claude-hooks-settings.json");
         let args = build_claude_args("implement the feature", None, settings);
         assert_eq!(
             args,
             vec![
                 "implement the feature",
                 "--settings",
-                "/home/user/.ai-command-center/claude-hooks-settings.json",
+                "/home/user/.openforge/claude-hooks-settings.json",
             ]
         );
     }

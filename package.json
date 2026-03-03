@@ -1,5 +1,5 @@
 {
-  "name": "ai-command-center",
+  "name": "openforge",
   "version": "0.0.1",
   "type": "module",
   "packageManager": "pnpm@10.25.0",

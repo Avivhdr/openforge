@@ -107,7 +107,7 @@ impl super::Database {
                 created_at: row.get(7)?,
                 updated_at: row.get(8)?,
                 provider: row.get(9)?,
-                claude_session_id: row.get(10)?
+                claude_session_id: row.get(10)?,
             }))
         } else {
             Ok(None)
@@ -358,8 +358,15 @@ mod tests {
         let (db, path) = make_test_db("latest_session");
         insert_test_task(&db);
 
-        db.create_agent_session("ses-old", "T-100", None, "read_ticket", "completed", "opencode")
-            .expect("create 1 failed");
+        db.create_agent_session(
+            "ses-old",
+            "T-100",
+            None,
+            "read_ticket",
+            "completed",
+            "opencode",
+        )
+        .expect("create 1 failed");
         db.create_agent_session("ses-new", "T-100", None, "implement", "running", "opencode")
             .expect("create 2 failed");
 
@@ -440,22 +447,53 @@ mod tests {
         let (db, path) = make_test_db("claude_event_types");
         insert_test_task(&db);
 
-        db.create_agent_session("ses-claude", "T-100", None, "implement", "running", "claude-code")
-            .expect("create session failed");
+        db.create_agent_session(
+            "ses-claude",
+            "T-100",
+            None,
+            "implement",
+            "running",
+            "claude-code",
+        )
+        .expect("create session failed");
 
         // Insert logs with all semantic log_type values used by the Claude bridge
-        db.insert_agent_log("ses-claude", "system.init", r#"{"type":"system","subtype":"init","session_id":"abc"}"#)
-            .expect("insert system.init failed");
-        db.insert_agent_log("ses-claude", "assistant", r#"{"type":"assistant","content":[{"type":"text","text":"Hello"}]}"#)
-            .expect("insert assistant failed");
-        db.insert_agent_log("ses-claude", "tool_use", r#"{"type":"tool_use","name":"Read","input":{"path":"foo.rs"}}"#)
-            .expect("insert tool_use failed");
-        db.insert_agent_log("ses-claude", "tool_result", r#"{"type":"tool_result","content":"file contents"}"#)
-            .expect("insert tool_result failed");
-        db.insert_agent_log("ses-claude", "result.success", r#"{"type":"result","subtype":"success","cost_usd":0.05}"#)
-            .expect("insert result.success failed");
-        db.insert_agent_log("ses-claude", "result.error_max_turns", r#"{"type":"result","subtype":"error_max_turns"}"#)
-            .expect("insert result.error_max_turns failed");
+        db.insert_agent_log(
+            "ses-claude",
+            "system.init",
+            r#"{"type":"system","subtype":"init","session_id":"abc"}"#,
+        )
+        .expect("insert system.init failed");
+        db.insert_agent_log(
+            "ses-claude",
+            "assistant",
+            r#"{"type":"assistant","content":[{"type":"text","text":"Hello"}]}"#,
+        )
+        .expect("insert assistant failed");
+        db.insert_agent_log(
+            "ses-claude",
+            "tool_use",
+            r#"{"type":"tool_use","name":"Read","input":{"path":"foo.rs"}}"#,
+        )
+        .expect("insert tool_use failed");
+        db.insert_agent_log(
+            "ses-claude",
+            "tool_result",
+            r#"{"type":"tool_result","content":"file contents"}"#,
+        )
+        .expect("insert tool_result failed");
+        db.insert_agent_log(
+            "ses-claude",
+            "result.success",
+            r#"{"type":"result","subtype":"success","cost_usd":0.05}"#,
+        )
+        .expect("insert result.success failed");
+        db.insert_agent_log(
+            "ses-claude",
+            "result.error_max_turns",
+            r#"{"type":"result","subtype":"error_max_turns"}"#,
+        )
+        .expect("insert result.error_max_turns failed");
 
         // Retrieve logs and verify
         let logs = db.get_agent_logs("ses-claude").expect("get logs failed");
@@ -470,12 +508,30 @@ mod tests {
         assert_eq!(logs[5].log_type, "result.error_max_turns");
 
         // Verify content values match what was inserted
-        assert_eq!(logs[0].content, r#"{"type":"system","subtype":"init","session_id":"abc"}"#);
-        assert_eq!(logs[1].content, r#"{"type":"assistant","content":[{"type":"text","text":"Hello"}]}"#);
-        assert_eq!(logs[2].content, r#"{"type":"tool_use","name":"Read","input":{"path":"foo.rs"}}"#);
-        assert_eq!(logs[3].content, r#"{"type":"tool_result","content":"file contents"}"#);
-        assert_eq!(logs[4].content, r#"{"type":"result","subtype":"success","cost_usd":0.05}"#);
-        assert_eq!(logs[5].content, r#"{"type":"result","subtype":"error_max_turns"}"#);
+        assert_eq!(
+            logs[0].content,
+            r#"{"type":"system","subtype":"init","session_id":"abc"}"#
+        );
+        assert_eq!(
+            logs[1].content,
+            r#"{"type":"assistant","content":[{"type":"text","text":"Hello"}]}"#
+        );
+        assert_eq!(
+            logs[2].content,
+            r#"{"type":"tool_use","name":"Read","input":{"path":"foo.rs"}}"#
+        );
+        assert_eq!(
+            logs[3].content,
+            r#"{"type":"tool_result","content":"file contents"}"#
+        );
+        assert_eq!(
+            logs[4].content,
+            r#"{"type":"result","subtype":"success","cost_usd":0.05}"#
+        );
+        assert_eq!(
+            logs[5].content,
+            r#"{"type":"result","subtype":"error_max_turns"}"#
+        );
 
         // Verify session_id is correct for all logs
         for log in &logs {
@@ -484,7 +540,10 @@ mod tests {
 
         // Verify chronological ordering (timestamps are non-decreasing)
         for i in 0..logs.len() - 1 {
-            assert!(logs[i].timestamp <= logs[i + 1].timestamp, "Logs should be in chronological order");
+            assert!(
+                logs[i].timestamp <= logs[i + 1].timestamp,
+                "Logs should be in chronological order"
+            );
         }
 
         drop(db);
@@ -496,12 +555,33 @@ mod tests {
         let (db, path) = make_test_db("mark_interrupted");
         insert_test_task(&db);
 
-        db.create_agent_session("ses-run1", "T-100", None, "implement", "running", "opencode")
-            .expect("create running 1 failed");
-        db.create_agent_session("ses-run2", "T-100", None, "implement", "running", "opencode")
-            .expect("create running 2 failed");
-        db.create_agent_session("ses-done", "T-100", None, "implement", "completed", "opencode")
-            .expect("create completed failed");
+        db.create_agent_session(
+            "ses-run1",
+            "T-100",
+            None,
+            "implement",
+            "running",
+            "opencode",
+        )
+        .expect("create running 1 failed");
+        db.create_agent_session(
+            "ses-run2",
+            "T-100",
+            None,
+            "implement",
+            "running",
+            "opencode",
+        )
+        .expect("create running 2 failed");
+        db.create_agent_session(
+            "ses-done",
+            "T-100",
+            None,
+            "implement",
+            "completed",
+            "opencode",
+        )
+        .expect("create completed failed");
         db.create_agent_session("ses-fail", "T-100", None, "implement", "failed", "opencode")
             .expect("create failed failed");
 
@@ -539,20 +619,36 @@ mod tests {
     fn test_agent_session_with_claude_provider() {
         let (db, path) = make_test_db("claude_provider");
         insert_test_task(&db);
-        
-        db.create_agent_session("ses-claude", "T-100", None, "implement", "running", "claude-code")
-            .expect("create failed");
-        
-        let session = db.get_agent_session("ses-claude").expect("get failed").expect("not found");
+
+        db.create_agent_session(
+            "ses-claude",
+            "T-100",
+            None,
+            "implement",
+            "running",
+            "claude-code",
+        )
+        .expect("create failed");
+
+        let session = db
+            .get_agent_session("ses-claude")
+            .expect("get failed")
+            .expect("not found");
         assert_eq!(session.provider, "claude-code");
         assert!(session.claude_session_id.is_none());
-        
+
         db.set_agent_session_claude_id("ses-claude", "claude-ses-123")
             .expect("set claude id failed");
-        
-        let session = db.get_agent_session("ses-claude").expect("get failed").expect("not found");
-        assert_eq!(session.claude_session_id, Some("claude-ses-123".to_string()));
-        
+
+        let session = db
+            .get_agent_session("ses-claude")
+            .expect("get failed")
+            .expect("not found");
+        assert_eq!(
+            session.claude_session_id,
+            Some("claude-ses-123".to_string())
+        );
+
         drop(db);
         let _ = std::fs::remove_file(&path);
     }
@@ -561,25 +657,45 @@ mod tests {
     fn test_get_sessions_by_provider() {
         let (db, path) = make_test_db("sessions_by_provider");
         insert_test_task(&db);
-        
+
         db.create_agent_session("ses-oc1", "T-100", None, "implement", "running", "opencode")
             .expect("create opencode 1 failed");
-        db.create_agent_session("ses-oc2", "T-100", None, "implement", "completed", "opencode")
-            .expect("create opencode 2 failed");
-        db.create_agent_session("ses-cc1", "T-100", None, "implement", "running", "claude-code")
-            .expect("create claude 1 failed");
-        
-        let opencode_sessions = db.get_sessions_by_provider("opencode").expect("get opencode failed");
+        db.create_agent_session(
+            "ses-oc2",
+            "T-100",
+            None,
+            "implement",
+            "completed",
+            "opencode",
+        )
+        .expect("create opencode 2 failed");
+        db.create_agent_session(
+            "ses-cc1",
+            "T-100",
+            None,
+            "implement",
+            "running",
+            "claude-code",
+        )
+        .expect("create claude 1 failed");
+
+        let opencode_sessions = db
+            .get_sessions_by_provider("opencode")
+            .expect("get opencode failed");
         assert_eq!(opencode_sessions.len(), 2);
         assert!(opencode_sessions.iter().all(|s| s.provider == "opencode"));
-        
-        let claude_sessions = db.get_sessions_by_provider("claude-code").expect("get claude failed");
+
+        let claude_sessions = db
+            .get_sessions_by_provider("claude-code")
+            .expect("get claude failed");
         assert_eq!(claude_sessions.len(), 1);
         assert_eq!(claude_sessions[0].provider, "claude-code");
-        
-        let none_sessions = db.get_sessions_by_provider("nonexistent").expect("get none failed");
+
+        let none_sessions = db
+            .get_sessions_by_provider("nonexistent")
+            .expect("get none failed");
         assert_eq!(none_sessions.len(), 0);
-        
+
         drop(db);
         let _ = std::fs::remove_file(&path);
     }
@@ -588,20 +704,43 @@ mod tests {
     fn test_get_running_claude_sessions() {
         let (db, path) = make_test_db("running_claude_sessions");
         insert_test_task(&db);
-        
-        db.create_agent_session("ses-cc-run", "T-100", None, "implement", "running", "claude-code")
-            .expect("create running claude failed");
-        db.create_agent_session("ses-cc-done", "T-100", None, "implement", "completed", "claude-code")
-            .expect("create completed claude failed");
-        db.create_agent_session("ses-oc-run", "T-100", None, "implement", "running", "opencode")
-            .expect("create running opencode failed");
-        
-        let running = db.get_running_claude_sessions().expect("get running failed");
+
+        db.create_agent_session(
+            "ses-cc-run",
+            "T-100",
+            None,
+            "implement",
+            "running",
+            "claude-code",
+        )
+        .expect("create running claude failed");
+        db.create_agent_session(
+            "ses-cc-done",
+            "T-100",
+            None,
+            "implement",
+            "completed",
+            "claude-code",
+        )
+        .expect("create completed claude failed");
+        db.create_agent_session(
+            "ses-oc-run",
+            "T-100",
+            None,
+            "implement",
+            "running",
+            "opencode",
+        )
+        .expect("create running opencode failed");
+
+        let running = db
+            .get_running_claude_sessions()
+            .expect("get running failed");
         assert_eq!(running.len(), 1);
         assert_eq!(running[0].id, "ses-cc-run");
         assert_eq!(running[0].provider, "claude-code");
         assert_eq!(running[0].status, "running");
-        
+
         drop(db);
         let _ = std::fs::remove_file(&path);
     }

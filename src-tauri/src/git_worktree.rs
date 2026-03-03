@@ -198,7 +198,7 @@ async fn try_create_worktree_inner(
 }
 
 /// Computes the standard worktree path for a PR review.
-/// Convention: ~/.ai-command-center/worktrees/{repo_name}/review-pr-{pr_number}
+/// Convention: ~/.openforge/worktrees/{repo_name}/review-pr-{pr_number}
 pub fn review_worktree_path(repo_path: &Path, pr_number: i64) -> Result<std::path::PathBuf, GitWorktreeError> {
     let home = dirs::home_dir().ok_or(GitWorktreeError::CommandFailed("Failed to get home directory".into()))?;
     let repo_name = repo_path
@@ -206,7 +206,7 @@ pub fn review_worktree_path(repo_path: &Path, pr_number: i64) -> Result<std::pat
         .and_then(|n| n.to_str())
         .ok_or(GitWorktreeError::CommandFailed("Invalid repo path".into()))?;
     Ok(home
-        .join(".ai-command-center")
+        .join(".openforge")
         .join("worktrees")
         .join(repo_name)
         .join(format!("review-pr-{}", pr_number)))
@@ -558,7 +558,7 @@ mod tests {
         let repo_path = std::path::Path::new("/some/path/my-repo");
         let result = review_worktree_path(repo_path, 42).unwrap();
         let path_str = result.to_string_lossy();
-        assert!(path_str.ends_with("/.ai-command-center/worktrees/my-repo/review-pr-42"));
+        assert!(path_str.ends_with("/.openforge/worktrees/my-repo/review-pr-42"));
     }
 
     #[test]

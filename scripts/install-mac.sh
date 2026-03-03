@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_NAME="AI Command Center"
+APP_NAME="Open Forge"
 BUNDLE_DIR="src-tauri/target/release/bundle/macos"
 INSTALL_DIR="/Applications"
 

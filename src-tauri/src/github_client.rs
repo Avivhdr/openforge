@@ -15,7 +15,7 @@
 //! Authorization header format: `token {personal_access_token}`
 //!
 //! ## User-Agent Requirement
-//! GitHub API requires a User-Agent header. This client uses: `ai-command-center`
+//! GitHub API requires a User-Agent header. This client uses: `openforge`
 
 use futures::future::join_all;
 use reqwest::Client;
@@ -71,7 +71,7 @@ impl GitHubClient {
             .client
             .get(url)
             .header("Authorization", format!("token {}", token))
-            .header("User-Agent", "ai-command-center");
+            .header("User-Agent", "openforge");
 
         if let Some(ref etag) = cached_etag {
             req = req.header("If-None-Match", etag);
@@ -174,7 +174,7 @@ impl GitHubClient {
             .client
             .get(&url)
             .header("Authorization", format!("token {}", token))
-            .header("User-Agent", "ai-command-center")
+            .header("User-Agent", "openforge")
             .send()
             .await
             .map_err(|e| GitHubError::NetworkError(e.to_string()))?;
@@ -261,7 +261,7 @@ impl GitHubClient {
             .client
             .get(&review_comments_url)
             .header("Authorization", format!("token {}", token))
-            .header("User-Agent", "ai-command-center");
+            .header("User-Agent", "openforge");
         if let Some(ref etag) = review_cached_etag {
             review_req = review_req.header("If-None-Match", etag);
         }
@@ -338,7 +338,7 @@ impl GitHubClient {
             .client
             .get(&issue_comments_url)
             .header("Authorization", format!("token {}", token))
-            .header("User-Agent", "ai-command-center");
+            .header("User-Agent", "openforge");
         if let Some(ref etag) = issue_cached_etag {
             issue_req = issue_req.header("If-None-Match", etag);
         }
@@ -474,7 +474,7 @@ impl GitHubClient {
             .client
             .post(&url)
             .header("Authorization", format!("token {}", token))
-            .header("User-Agent", "ai-command-center")
+            .header("User-Agent", "openforge")
             .json(&request_body)
             .send()
             .await
@@ -585,7 +585,7 @@ impl GitHubClient {
             .client
             .get(&first_page_url)
             .header("Authorization", format!("token {}", token))
-            .header("User-Agent", "ai-command-center");
+            .header("User-Agent", "openforge");
 
         if let Some(ref etag) = cached_etag {
             req = req.header("If-None-Match", etag);
@@ -641,7 +641,7 @@ impl GitHubClient {
                 .client
                 .get(&url)
                 .header("Authorization", format!("token {}", token))
-                .header("User-Agent", "ai-command-center")
+                .header("User-Agent", "openforge")
                 .send()
                 .await
                 .map_err(|e| GitHubError::NetworkError(e.to_string()))?;
@@ -733,7 +733,7 @@ impl GitHubClient {
             .client
             .get(&first_page_url)
             .header("Authorization", format!("token {}", token))
-            .header("User-Agent", "ai-command-center");
+            .header("User-Agent", "openforge");
 
         if let Some(ref etag) = cached_etag {
             req = req.header("If-None-Match", etag);
@@ -792,7 +792,7 @@ impl GitHubClient {
                 .client
                 .get(&url)
                 .header("Authorization", format!("token {}", token))
-                .header("User-Agent", "ai-command-center")
+                .header("User-Agent", "openforge")
                 .send()
                 .await
                 .map_err(|e| GitHubError::NetworkError(e.to_string()))?;
@@ -864,7 +864,7 @@ impl GitHubClient {
             .client
             .get(url)
             .header("Authorization", format!("token {}", token))
-            .header("User-Agent", "ai-command-center")
+            .header("User-Agent", "openforge")
             .send()
             .await
             .map_err(|e| GitHubError::NetworkError(e.to_string()))?;
@@ -911,7 +911,7 @@ impl GitHubClient {
             .client
             .get(&url)
             .header("Authorization", format!("token {}", token))
-            .header("User-Agent", "ai-command-center")
+            .header("User-Agent", "openforge")
             .send()
             .await
             .map_err(|e| GitHubError::NetworkError(e.to_string()))?;
@@ -1030,7 +1030,7 @@ impl GitHubClient {
             .client
             .get(&url)
             .header("Authorization", format!("token {}", token))
-            .header("User-Agent", "ai-command-center")
+            .header("User-Agent", "openforge")
             .send()
             .await
             .map_err(|e| GitHubError::NetworkError(e.to_string()))?;
@@ -1081,7 +1081,7 @@ impl GitHubClient {
             .client
             .get(&url)
             .header("Authorization", format!("token {}", token))
-            .header("User-Agent", "ai-command-center")
+            .header("User-Agent", "openforge")
             .send()
             .await
             .map_err(|e| GitHubError::NetworkError(e.to_string()))?;
@@ -1132,7 +1132,7 @@ impl GitHubClient {
             .client
             .get(&url)
             .header("Authorization", format!("token {}", token))
-            .header("User-Agent", "ai-command-center")
+            .header("User-Agent", "openforge")
             .send()
             .await
             .map_err(|e| GitHubError::NetworkError(e.to_string()))?;
@@ -1186,7 +1186,7 @@ impl GitHubClient {
             .client
             .post(&url)
             .header("Authorization", format!("token {}", token))
-            .header("User-Agent", "ai-command-center")
+            .header("User-Agent", "openforge")
             .json(&request_body)
             .send()
             .await
@@ -1271,7 +1271,7 @@ impl GitHubClient {
             .client
             .get(&url)
             .header("Authorization", format!("token {}", token))
-            .header("User-Agent", "ai-command-center");
+            .header("User-Agent", "openforge");
 
         if let Some(ref etag) = cached_etag {
             req = req.header("If-None-Match", etag);
@@ -1384,7 +1384,7 @@ impl GitHubClient {
             .client
             .get(&url)
             .header("Authorization", format!("token {}", token))
-            .header("User-Agent", "ai-command-center");
+            .header("User-Agent", "openforge");
 
         if let Some(ref etag) = cached_etag {
             req = req.header("If-None-Match", etag);

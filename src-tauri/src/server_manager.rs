@@ -309,7 +309,7 @@ impl ServerManager {
         let home = dirs::home_dir()
             .ok_or_else(|| ServerError::IoError(io::Error::new(io::ErrorKind::NotFound, "Home directory not found")))?;
         let pids_dir_name = if cfg!(debug_assertions) { "pids-dev" } else { "pids" };
-        Ok(home.join(".ai-command-center").join(pids_dir_name))
+        Ok(home.join(".openforge").join(pids_dir_name))
     }
 
     /// Detects the dynamically assigned port by parsing stdout for "127.0.0.1:(\d+)"
@@ -474,9 +474,9 @@ mod tests {
         let dir_name = pid_dir.file_name().unwrap().to_str().unwrap();
         assert_eq!(dir_name, "pids-dev", "Debug build should use pids-dev directory");
         
-        // Verify parent is .ai-command-center
+        // Verify parent is .openforge
         let parent_name = pid_dir.parent().unwrap().file_name().unwrap().to_str().unwrap();
-        assert_eq!(parent_name, ".ai-command-center");
+        assert_eq!(parent_name, ".openforge");
     }
 
     #[test]

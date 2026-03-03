@@ -354,24 +354,23 @@ INSERT OR IGNORE INTO config (key, value) VALUES ('next_project_id', '1')
                 Ok(())
             },
         ),
-        M::up_with_hook(
-            r#""#,
-            |tx| {
-                let config_exists: bool = tx.query_row(
+        M::up_with_hook(r#""#, |tx| {
+            let config_exists: bool = tx
+                .query_row(
                     "SELECT COUNT(*) > 0 FROM sqlite_master WHERE type='table' AND name='config'",
                     [],
                     |r| r.get(0),
-                ).unwrap_or(false);
+                )
+                .unwrap_or(false);
 
-                if config_exists {
-                    tx.execute(
+            if config_exists {
+                tx.execute(
                         "UPDATE config SET value = 'claude-code' WHERE key = 'ai_provider' AND value = 'opencode'",
                         [],
                     ).map_err(rusqlite_migration::HookError::RusqliteError)?;
-                }
-                Ok(())
-            },
-        ),
+            }
+            Ok(())
+        }),
         M::up(
             r#"
 CREATE TABLE IF NOT EXISTS agent_review_comments (
@@ -427,7 +426,7 @@ mod tests {
     #[test]
     fn test_database_initialization() {
         let temp_dir = std::env::temp_dir();
-        let db_path = temp_dir.join("test_ai_command_center.db");
+        let db_path = temp_dir.join("test_openforge.db");
 
         // Clean up if exists
         let _ = fs::remove_file(&db_path);

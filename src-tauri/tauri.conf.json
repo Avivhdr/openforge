@@ -1,7 +1,7 @@
 {
-  "productName": "AI Command Center",
+  "productName": "Open Forge",
   "version": "0.0.1",
-  "identifier": "com.opencode.ai-command-center",
+  "identifier": "com.opencode.openforge",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
@@ -11,7 +11,7 @@
   "app": {
     "windows": [
       {
-        "title": "AI Command Center",
+        "title": "Open Forge",
         "width": 1200,
         "height": 800,
         "resizable": true,

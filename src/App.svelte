@@ -578,7 +578,7 @@
 <div class="flex flex-col h-screen overflow-hidden">
   <header class="navbar bg-base-200 border-b border-base-300 px-6 gap-5 min-h-14 shrink-0">
     <div class="flex items-center gap-4 flex-1">
-      <h1 class="text-sm font-semibold text-base-content tracking-wide m-0">AI Command Center</h1>
+      <h1 class="text-sm font-semibold text-base-content tracking-wide m-0">Open Forge</h1>
       {#if appMode === 'dev'}
         <span class="badge badge-warning badge-sm font-mono">DEV</span>
       {/if}

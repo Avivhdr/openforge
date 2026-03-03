@@ -20,6 +20,7 @@ mod http_server;
 mod plugin_installer;
 mod claude_hooks;
 mod commands;
+mod migration;
 use std::sync::{Mutex, Arc};
 use tauri::{Manager, Emitter};
 use jira_client::JiraClient;
@@ -237,10 +238,12 @@ fn main() {
                 .app_data_dir()
                 .expect("Failed to get app data directory");
 
+            migration::run(&app_data_dir);
+
             let db_filename = if cfg!(debug_assertions) {
-                "ai_command_center_dev.db"
+                "openforge_dev.db"
             } else {
-                "ai_command_center.db"
+                "openforge.db"
             };
             let db_path = app_data_dir.join(db_filename);
 
