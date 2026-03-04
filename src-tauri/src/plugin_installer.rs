@@ -9,7 +9,6 @@ export default tool({
   description: "Create a new task in Open Forge. Use this when you need to create follow-up work or break a task into subtasks. The task will be added to the backlog for later implementation.",
   args: {
     title: tool.schema.string().describe("Short, descriptive title for the task (e.g., 'Implement user authentication')"),
-    description: tool.schema.string().describe("Detailed description of what needs to be done. Will be stored as the task plan for later implementation."),
     project_id: tool.schema.string().describe("Project ID to associate with (optional, e.g., 'P-1')").optional(),
   },
   async execute(args, context) {
@@ -21,7 +20,6 @@ export default tool({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: args.title,
-          description: args.description,
           project_id: args.project_id,
           calling_session_id: context.sessionID,
           worktree: context.worktree,
@@ -57,12 +55,6 @@ pub fn install_create_task_plugin() -> Result<(), Box<dyn std::error::Error>> {
 
     let tool_file = tools_dir.join("create_task.ts");
 
-    // Check if already installed
-    if tool_file.exists() {
-        println!("[plugin_installer] create_task tool already installed");
-        return Ok(());
-    }
-
     // Create directory structure
     fs::create_dir_all(&tools_dir)?;
 
@@ -70,7 +62,7 @@ pub fn install_create_task_plugin() -> Result<(), Box<dyn std::error::Error>> {
     fs::write(&tool_file, CREATE_TASK_TOOL)?;
 
     println!(
-        "[plugin_installer] create_task tool installed at: {}",
+        "[plugin_installer] create_task tool installed/updated at: {}",
         tool_file.display()
     );
 
@@ -94,5 +86,10 @@ mod tests {
         assert!(!CREATE_TASK_TOOL.is_empty());
         assert!(CREATE_TASK_TOOL.contains("create_task"));
         assert!(CREATE_TASK_TOOL.contains("execute"));
+        // Verify description argument is removed
+        assert!(!CREATE_TASK_TOOL.contains("description: tool.schema"));
+        assert!(!CREATE_TASK_TOOL.contains("description: args.description"));
+        // Verify tool-level description still exists
+        assert!(CREATE_TASK_TOOL.contains("description: \"Create a new task"));
     }
 }

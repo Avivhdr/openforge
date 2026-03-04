@@ -11,7 +11,7 @@ const baseTask: Task = {
   jira_title: 'Add JWT authentication to REST API',
   jira_status: 'To Do',
   jira_assignee: 'Alice',
-  plan_text: null,
+  jira_description: null,
   project_id: null,
   created_at: 1000,
   updated_at: 2000,

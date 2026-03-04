@@ -31,7 +31,7 @@ const baseTask: Task = {
   jira_title: null,
   jira_status: null,
   jira_assignee: null,
-  plan_text: null,
+  jira_description: null,
   project_id: 'proj-1',
   created_at: 1000,
   updated_at: 2000,

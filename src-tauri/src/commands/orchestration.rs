@@ -23,14 +23,6 @@ pub fn build_task_prompt(task: &db::TaskRow, action_instruction: &str, additiona
     
     prompt.push('\n');
     
-    if let Some(ref plan_text) = task.plan_text {
-        if !plan_text.is_empty() {
-            prompt.push_str("Plan:\n");
-            prompt.push_str(plan_text);
-            prompt.push_str("\n\n");
-        }
-    }
-    
     prompt.push_str(action_instruction);
     prompt
 }
@@ -662,7 +654,6 @@ mod tests {
         let task = db::TaskRow {
             id: "T-123".to_string(),
             title: "Test Task".to_string(),
-            plan_text: Some("Step 1: Do this\nStep 2: Do that".to_string()),
             status: "backlog".to_string(),
             jira_key: None,
             jira_title: None,
@@ -677,8 +668,7 @@ mod tests {
         let prompt = build_task_prompt(&task, "Do the thing!", None);
         
         assert!(prompt.contains("Test Task"));
-        assert!(prompt.contains("Plan:"));
-        assert!(prompt.contains("Step 1: Do this"));
+        assert!(!prompt.contains("Plan:"));
         assert!(prompt.ends_with("Do the thing!"));
     }
 
@@ -687,7 +677,6 @@ mod tests {
         let task = db::TaskRow {
             id: "T-456".to_string(),
             title: "Minimal Task".to_string(),
-            plan_text: None,
             status: "backlog".to_string(),
             jira_key: None,
             jira_title: None,
@@ -711,7 +700,6 @@ mod tests {
         let task = db::TaskRow {
             id: "T-789".to_string(),
             title: "Empty Fields Task".to_string(),
-            plan_text: Some("".to_string()),
             status: "backlog".to_string(),
             jira_key: None,
             jira_title: None,
@@ -735,7 +723,6 @@ mod tests {
         let task = db::TaskRow {
             id: "T-999".to_string(),
             title: "Instructions Task".to_string(),
-            plan_text: Some("Step 1: Do this\nStep 2: Do that".to_string()),
             status: "backlog".to_string(),
             jira_key: None,
             jira_title: None,
@@ -751,7 +738,7 @@ mod tests {
         
         assert!(prompt.starts_with("Always use TypeScript strict mode."));
         assert!(prompt.contains("Instructions Task"));
-        assert!(prompt.contains("Plan:\n"));
+        assert!(!prompt.contains("Plan:"));
         assert!(prompt.ends_with("Do the thing!"));
     }
 
@@ -760,7 +747,6 @@ mod tests {
         let task = db::TaskRow {
             id: "T-111".to_string(),
             title: "Empty Instructions Task".to_string(),
-            plan_text: Some("Step 1: Do this\nStep 2: Do that".to_string()),
             status: "backlog".to_string(),
             jira_key: None,
             jira_title: None,
@@ -783,7 +769,6 @@ mod tests {
         let task = db::TaskRow {
             id: "T-222".to_string(),
             title: "None Instructions Task".to_string(),
-            plan_text: Some("Step 1: Do this\nStep 2: Do that".to_string()),
             status: "backlog".to_string(),
             jira_key: None,
             jira_title: None,
@@ -805,7 +790,6 @@ mod tests {
         let task = db::TaskRow {
             id: "T-333".to_string(),
             title: "Feature with Jira context".to_string(),
-            plan_text: Some("Step 1: Implement API".to_string()),
             status: "backlog".to_string(),
             jira_key: Some("PROJ-42".to_string()),
             jira_title: Some("Add auth endpoint".to_string()),
@@ -823,8 +807,7 @@ mod tests {
         assert!(prompt.contains("Jira: PROJ-42"));
         assert!(!prompt.contains("Description:"));
         assert!(!prompt.contains("authenticate via JWT"));
-        assert!(prompt.contains("Plan:"));
-        assert!(prompt.contains("Step 1: Implement API"));
+        assert!(!prompt.contains("Plan:"));
         assert!(prompt.ends_with("Implement this task."));
     }
 
@@ -833,7 +816,6 @@ mod tests {
         let task = db::TaskRow {
             id: "T-444".to_string(),
             title: "Task without jira".to_string(),
-            plan_text: None,
             status: "backlog".to_string(),
             jira_key: None,
             jira_title: None,
@@ -857,7 +839,6 @@ mod tests {
         let task = db::TaskRow {
             id: "T-555".to_string(),
             title: "No ID in prompt".to_string(),
-            plan_text: None,
             status: "backlog".to_string(),
             jira_key: None,
             jira_title: None,

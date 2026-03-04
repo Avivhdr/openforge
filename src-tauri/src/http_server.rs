@@ -13,7 +13,6 @@ use tauri::Emitter;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateTaskRequest {
     pub title: String,
-    pub description: Option<String>,
     pub project_id: Option<String>,
     /// Worktree path of the calling session - used to deduce project_id if not provided
     pub worktree: Option<String>,
@@ -77,7 +76,6 @@ pub async fn create_task_handler(
         "backlog",
         None,
         project_id.as_deref(),
-        request.description.as_deref(),
     ).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     drop(db);
@@ -277,6 +275,16 @@ mod tests {
     // CreateTaskRequest Tests
     // ========================================================================
 
+    #[test]
+    fn test_create_task_request_ignores_unknown_description_field() {
+        // Backward compat: old tool files may still send "description" field
+        // serde ignores unknown fields by default, so this should deserialize without error
+        let json = r#"{"title": "Test", "description": "old field still sent"}"#;
+        let req: CreateTaskRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.title, "Test");
+        // description field is silently ignored — no panic, no error
+    }
+
     // ========================================================================
     // map_hook_to_status Tests
     // ========================================================================
@@ -346,12 +354,10 @@ mod tests {
     fn test_create_task_request_creation() {
         let request = CreateTaskRequest {
             title: "Test Task".to_string(),
-            description: Some("Test description".to_string()),
             project_id: Some("PROJ-1".to_string()),
             worktree: Some("/path/to/wt".to_string()),
         };
         assert_eq!(request.title, "Test Task");
-        assert_eq!(request.description, Some("Test description".to_string()));
         assert_eq!(request.project_id, Some("PROJ-1".to_string()));
     }
 
@@ -359,22 +365,20 @@ mod tests {
     fn test_create_task_request_minimal_fields() {
         let request = CreateTaskRequest {
             title: "Minimal Task".to_string(),
-            description: None,
             project_id: None,
             worktree: None,
         };
         assert_eq!(request.title, "Minimal Task");
-        assert!(request.description.is_none());
         assert!(request.project_id.is_none());
     }
 
     #[test]
     fn test_create_task_request_deserialize_all_fields() {
-        let json = r#"{"title": "Implement Feature X", "description": "Detailed description here", "project_id": "PROJ-42"}"#;
+        let json = r#"{"title": "Implement Feature X", "project_id": "PROJ-42", "worktree": "/path/to/wt"}"#;
         let request: CreateTaskRequest = serde_json::from_str(json).expect("Failed to deserialize");
         assert_eq!(request.title, "Implement Feature X");
-        assert_eq!(request.description, Some("Detailed description here".to_string()));
         assert_eq!(request.project_id, Some("PROJ-42".to_string()));
+        assert_eq!(request.worktree, Some("/path/to/wt".to_string()));
     }
 
     #[test]
@@ -382,32 +386,31 @@ mod tests {
         let json = r#"{"title": "Simple Task"}"#;
         let request: CreateTaskRequest = serde_json::from_str(json).expect("Failed to deserialize");
         assert_eq!(request.title, "Simple Task");
-        assert!(request.description.is_none());
         assert!(request.project_id.is_none());
     }
 
     #[test]
     fn test_create_task_request_deserialize_partial_optional() {
-        // Only description provided, no project_id
-        let json = r#"{"title": "Task with description", "description": "Some notes"}"#;
+        // Only project_id provided, no worktree
+        let json = r#"{"title": "Task with project", "project_id": "PROJ-99"}"#;
         let request: CreateTaskRequest = serde_json::from_str(json).expect("Failed to deserialize");
-        assert_eq!(request.title, "Task with description");
-        assert_eq!(request.description, Some("Some notes".to_string()));
-        assert!(request.project_id.is_none());
+        assert_eq!(request.title, "Task with project");
+        assert_eq!(request.project_id, Some("PROJ-99".to_string()));
+        assert!(request.worktree.is_none());
     }
 
     #[test]
     fn test_create_task_request_deserialize_empty_strings() {
-        let json = r#"{"title": "", "description": "", "project_id": ""}"#;
+        let json = r#"{"title": "", "project_id": "", "worktree": ""}"#;
         let request: CreateTaskRequest = serde_json::from_str(json).expect("Failed to deserialize");
         assert_eq!(request.title, "");
-        assert_eq!(request.description, Some("".to_string()));
         assert_eq!(request.project_id, Some("".to_string()));
+        assert_eq!(request.worktree, Some("".to_string()));
     }
 
     #[test]
     fn test_create_task_request_deserialize_missing_title_fails() {
-        let json = r#"{"description": "No title here"}"#;
+        let json = r#"{"project_id": "PROJ-1"}"#;
         let result: Result<CreateTaskRequest, _> = serde_json::from_str(json);
         assert!(result.is_err(), "Should fail without required title field");
     }
@@ -416,14 +419,12 @@ mod tests {
     fn test_create_task_request_serialize_roundtrip() {
         let original = CreateTaskRequest {
             title: "Roundtrip Test".to_string(),
-            description: Some("Check serialization".to_string()),
             project_id: Some("PROJ-99".to_string()),
             worktree: Some("/path/to/worktree".to_string()),
         };
         let json = serde_json::to_string(&original).expect("Failed to serialize");
         let deserialized: CreateTaskRequest = serde_json::from_str(&json).expect("Failed to deserialize");
         assert_eq!(deserialized.title, original.title);
-        assert_eq!(deserialized.description, original.description);
         assert_eq!(deserialized.project_id, original.project_id);
         assert_eq!(deserialized.worktree, original.worktree);
     }

@@ -393,6 +393,20 @@ CREATE INDEX IF NOT EXISTS idx_agent_review_comments_pr ON agent_review_comments
 CREATE INDEX IF NOT EXISTS idx_agent_review_comments_session ON agent_review_comments(review_session_key);
             "#,
         ),
+        M::up_with_hook("", |tx| {
+            let has_column: bool = tx
+                .query_row(
+                    "SELECT COUNT(*) > 0 FROM pragma_table_info('tasks') WHERE name = 'plan_text'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap_or(false);
+            if has_column {
+                tx.execute("ALTER TABLE tasks DROP COLUMN plan_text", [])
+                    .map_err(rusqlite_migration::HookError::RusqliteError)?;
+            }
+            Ok(())
+        }),
     ])
 }
 #[cfg(test)]
@@ -411,8 +425,8 @@ pub mod test_helpers {
         let conn = db.connection();
         let conn = conn.lock().unwrap();
         conn.execute(
-            "INSERT INTO tasks (id, title, status, jira_key, jira_title, jira_status, jira_assignee, plan_text, project_id, created_at, updated_at, jira_description) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
-            rusqlite::params!["T-100", "Test task", "backlog", "PROJ-100", "Test task summary", "To Do", "alice", None::<String>, None::<String>, 1000, 1000, None::<String>],
+            "INSERT INTO tasks (id, title, status, jira_key, jira_title, jira_status, jira_assignee, project_id, created_at, updated_at, jira_description) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            rusqlite::params!["T-100", "Test task", "backlog", "PROJ-100", "Test task summary", "To Do", "alice", None::<String>, 1000, 1000, None::<String>],
         ).expect("Failed to insert test task");
     }
 }
@@ -653,8 +667,8 @@ mod tests {
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
         assert_eq!(
-            uv, 4,
-            "Fresh DB should have user_version=4 after migrations, got {}",
+            uv, 5,
+            "Fresh DB should have user_version=5 after migrations, got {}",
             uv
         );
 
