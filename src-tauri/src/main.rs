@@ -114,21 +114,6 @@ async fn resume_task_servers(app: tauri::AppHandle, http_ready: tokio::sync::one
                     app.clone(),
                 ).await {
                     Ok(_) => {
-                        if let Some(ref session) = latest_session {
-                            let db = app.state::<Arc<Mutex<db::Database>>>();
-                            let db_lock = db.lock().unwrap();
-                            let _ = db_lock.update_agent_session(
-                                &session.id, &session.stage, "running", None, None,
-                            );
-                        }
-                        let _ = app.emit(
-                            "agent-status-changed",
-                            serde_json::json!({
-                                "task_id": worktree.task_id,
-                                "status": "running",
-                                "provider": "claude-code"
-                            }),
-                        );
                         let _ = app.emit(
                             "server-resumed",
                             serde_json::json!({
