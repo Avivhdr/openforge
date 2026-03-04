@@ -57,7 +57,6 @@ const baseTask: Task = {
   jira_status: null,
   jira_assignee: null,
   jira_description: null,
-  plan_text: null,
   project_id: 'proj-1',
   created_at: Date.now(),
   updated_at: Date.now(),
