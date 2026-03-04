@@ -55,8 +55,8 @@
   animation: border-pulse-success 2s ease-in-out infinite;
 }
 .completed {
-  border-left: 3px solid var(--color-primary);
-  background-image: linear-gradient(to right, color-mix(in oklch, var(--color-primary) 8%, transparent), transparent 40%);
+  border-left: 3px solid var(--color-info);
+  background-image: linear-gradient(to right, color-mix(in oklch, var(--color-info) 8%, transparent), transparent 40%);
 }
 .paused {
   border-left: 3px solid var(--color-warning);
