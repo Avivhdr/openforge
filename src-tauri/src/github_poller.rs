@@ -13,7 +13,6 @@
 //!   - For each PR, fetches comments via GitHubClient::get_pr_comments()
 //!   - Inserts NEW comments only (checks if comment id exists)
 //!   - Emits `new-pr-comment` event with ticket_id and comment_id
-//!   - Triggers worktree cleanup on PR merge/close
 //! - Sleeps for poll_interval seconds, then loops
 //!
 //! ## Parallelization
@@ -21,13 +20,6 @@
 //! - poll_single_pr() handles one PR: comments + CI (check_runs + combined_status in parallel)
 //! - DB is locked once after all HTTP calls complete for batch writes
 //! - last_polled_at timestamps are read before HTTP calls and written after
-//!
-//! ## Worktree Cleanup
-//! - When PR state changes to "merged" or "closed":
-//!   - Spawns async cleanup task (non-blocking)
-//!   - Removes worktree via git_worktree::remove_worktree()
-//!   - Deletes database record via db.delete_worktree_record()
-//!   - Emits `worktree-cleaned` event with task_id
 //!
 //! ## Error Handling
 //! - Logs errors and continues (doesn't crash the polling loop)
@@ -40,7 +32,6 @@ use crate::github_client::{aggregate_ci_status, aggregate_review_status, dedupli
 use futures::future::join_all;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager};
@@ -336,55 +327,10 @@ fn get_open_prs_for_project(
         .collect())
 }
 
-async fn cleanup_worktree_for_task(
-    db: &Mutex<Database>,
-    app: &AppHandle,
-    task_id: &str,
-) -> Result<(), String> {
-    let worktree = {
-        let db_lock = db.lock().unwrap();
-        db_lock
-            .get_worktree_for_task(task_id)
-            .map_err(|e| format!("Failed to get worktree: {}", e))?
-    };
-
-    let Some(worktree) = worktree else {
-        return Ok(());
-    };
-
-    println!("[GitHub Poller] Cleaning up worktree for task {}", task_id);
-
-    let repo_path = Path::new(&worktree.repo_path);
-    let worktree_path = Path::new(&worktree.worktree_path);
-
-    if let Err(e) = crate::git_worktree::remove_worktree(repo_path, worktree_path).await {
-        eprintln!(
-            "[GitHub Poller] Failed to remove worktree at {}: {}",
-            worktree_path.display(),
-            e
-        );
-    }
-
-    {
-        let db_lock = db.lock().unwrap();
-        db_lock
-            .delete_worktree_record(task_id)
-            .map_err(|e| format!("Failed to delete worktree record: {}", e))?;
-    }
-
-    if let Err(e) = app.emit("worktree-cleaned", task_id) {
-        eprintln!("[GitHub Poller] Failed to emit worktree-cleaned event: {}", e);
-    }
-
-    println!("[GitHub Poller] Successfully cleaned up worktree for task {}", task_id);
-
-    Ok(())
-}
-
 async fn sync_open_prs(
     github_client: &GitHubClient,
     db: &Mutex<Database>,
-    app: &AppHandle,
+    _app: &AppHandle,
     config: &PollerConfig,
     github_token: &str,
 ) -> Result<usize, String> {
@@ -469,21 +415,6 @@ async fn sync_open_prs(
                 }
             }
         }
-    }
-
-    for closed_pr in closed_prs {
-        let task_id = closed_pr.ticket_id.clone();
-        let app_clone = app.clone();
-
-        tokio::spawn(async move {
-            let db_state = app_clone.state::<Arc<Mutex<Database>>>();
-            if let Err(e) = cleanup_worktree_for_task(&db_state, &app_clone, &task_id).await {
-                eprintln!(
-                    "[GitHub Poller] Failed to cleanup worktree for task {}: {}",
-                    task_id, e
-                );
-            }
-        });
     }
 
     let mut dont_close_ids = open_pr_ids.clone();
