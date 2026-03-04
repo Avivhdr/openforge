@@ -20,6 +20,7 @@ export interface PoolEntry {
 }
 
 const pool = new Map<string, PoolEntry>()
+const openedTerminals = new WeakSet<Terminal>()
 
 function createHostDiv(): HTMLDivElement {
   const div = document.createElement('div')
@@ -87,7 +88,12 @@ export async function acquire(taskId: string): Promise<PoolEntry> {
     ])
   }
 
-  terminal.open(hostDiv)
+  // NOTE: terminal.open() is deferred to the first attach() call so that
+  // xterm.js measures character dimensions against a DOM-attached container
+  // with real pixel dimensions. Calling open() on a detached 0×0 div causes
+  // CharSizeService to produce invalid measurements, making fitAddon unable
+  // to compute proper terminal dimensions. xterm.js buffers write() calls
+  // until open() is invoked, so buffer replay and listeners work correctly.
 
   const entry: PoolEntry = {
     taskId,
@@ -148,6 +154,14 @@ export function attach(entry: PoolEntry, wrapperEl: HTMLDivElement): void {
 
   wrapperEl.appendChild(entry.hostDiv)
   entry.attached = true
+
+  // Open terminal into the now-DOM-attached hostDiv (first attach only).
+  // Deferred from acquire() so xterm.js CharSizeService measures character
+  // dimensions against a container with real pixel dimensions.
+  if (!openedTerminals.has(entry.terminal)) {
+    entry.terminal.open(entry.hostDiv)
+    openedTerminals.add(entry.terminal)
+  }
 
   // Set up ResizeObserver
   entry.resizeObserver = new ResizeObserver((entries) => {
