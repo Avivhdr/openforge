@@ -310,12 +310,6 @@
     )
 
     unlisteners.push(
-      await listen('worktree-cleaned', () => {
-        loadTasks()
-      })
-    )
-
-    unlisteners.push(
       await listen('new-pr-comment', () => {
         loadTasks()
         loadPullRequests()
