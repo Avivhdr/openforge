@@ -68,6 +68,7 @@ vi.mock('../lib/stores', () => ({
   ticketPrs: writable(new Map()),
   tasks: writable([]),
   activeProjectId: writable('project-1'),
+  error: writable(null),
 }))
 
 vi.mock('../lib/ipc', () => ({
@@ -320,6 +321,39 @@ describe('TaskDetailView', () => {
       expect(shellWrapper).toBeTruthy()
     })
     vi.mocked(getWorktreeForTask).mockResolvedValue(null)
+  })
+
+  it('renders Delete button in header', () => {
+    render(TaskDetailView, { props: { task: baseTask, onRunAction: mockOnRunAction } })
+    expect(screen.getByTitle('Delete task')).toBeTruthy()
+  })
+
+  it('calls deleteTask and clears selectedTaskId when Delete is clicked', async () => {
+    const { deleteTask } = await import('../lib/ipc')
+    const { selectedTaskId } = await import('../lib/stores')
+    selectedTaskId.set('T-42')
+    render(TaskDetailView, { props: { task: baseTask, onRunAction: mockOnRunAction } })
+    await fireEvent.click(screen.getByTitle('Delete task'))
+    expect(deleteTask).toHaveBeenCalledWith('T-42')
+    await waitFor(() => {
+      let currentId: string | null = null
+      selectedTaskId.subscribe(v => { currentId = v })()
+      expect(currentId).toBeNull()
+    })
+  })
+
+  it('shows error when deleteTask fails', async () => {
+    const { deleteTask } = await import('../lib/ipc')
+    const { error: errorStore } = await import('../lib/stores')
+    vi.mocked(deleteTask).mockRejectedValueOnce(new Error('Delete failed'))
+    render(TaskDetailView, { props: { task: baseTask, onRunAction: mockOnRunAction } })
+    await fireEvent.click(screen.getByTitle('Delete task'))
+    await waitFor(() => {
+      let errorVal: string | null = null
+      errorStore.subscribe(v => { errorVal = v })()
+      expect(errorVal).toBe('Error: Delete failed')
+    })
+    errorStore.set(null)
   })
 
 })
