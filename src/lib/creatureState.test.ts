@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { computeCreatureState } from './creatureState'
+import { computeCreatureState, computeCreatureRoom } from './creatureState'
 import type { Task, AgentSession } from './types'
 
 const makeTask = (id: string, status: string): Task => ({
@@ -103,5 +103,74 @@ describe('computeCreatureState', () => {
     const session = makeSession('T-1', 'unknown-status')
     const result = computeCreatureState(task, session)
     expect(result).toBe('idle')
+  })
+})
+
+describe('computeCreatureRoom', () => {
+  it('returns nursery when task status is backlog (no session)', () => {
+    const task = makeTask('T-1', 'backlog')
+    const result = computeCreatureRoom(task, null)
+    expect(result).toBe('nursery')
+  })
+
+  it('returns nursery when task status is backlog (with session)', () => {
+    const task = makeTask('T-1', 'backlog')
+    const session = makeSession('T-1', 'running')
+    const result = computeCreatureRoom(task, session)
+    expect(result).toBe('nursery')
+  })
+
+  it('returns forge when task status is doing and session is null (idle)', () => {
+    const task = makeTask('T-1', 'doing')
+    const result = computeCreatureRoom(task, null)
+    expect(result).toBe('forge')
+  })
+
+  it('returns forge when task status is doing and session status is running', () => {
+    const task = makeTask('T-1', 'doing')
+    const session = makeSession('T-1', 'running')
+    const result = computeCreatureRoom(task, session)
+    expect(result).toBe('forge')
+  })
+
+  it('returns forge when task status is doing and session status is completed', () => {
+    const task = makeTask('T-1', 'doing')
+    const session = makeSession('T-1', 'completed')
+    const result = computeCreatureRoom(task, session)
+    expect(result).toBe('forge')
+  })
+
+  it('returns warRoom when task status is doing and session is paused with checkpoint', () => {
+    const task = makeTask('T-1', 'doing')
+    const session = makeSession('T-1', 'paused', '{"question":"approve?"}')
+    const result = computeCreatureRoom(task, session)
+    expect(result).toBe('warRoom')
+  })
+
+  it('returns warRoom when task status is doing and session is paused without checkpoint', () => {
+    const task = makeTask('T-1', 'doing')
+    const session = makeSession('T-1', 'paused', null)
+    const result = computeCreatureRoom(task, session)
+    expect(result).toBe('warRoom')
+  })
+
+  it('returns warRoom when task status is doing and session status is failed', () => {
+    const task = makeTask('T-1', 'doing')
+    const session = makeSession('T-1', 'failed')
+    const result = computeCreatureRoom(task, session)
+    expect(result).toBe('warRoom')
+  })
+
+  it('returns warRoom when task status is doing and session status is interrupted', () => {
+    const task = makeTask('T-1', 'doing')
+    const session = makeSession('T-1', 'interrupted')
+    const result = computeCreatureRoom(task, session)
+    expect(result).toBe('warRoom')
+  })
+
+  it('returns forge as fallback for unknown task status', () => {
+    const task = makeTask('T-1', 'done')
+    const result = computeCreatureRoom(task, null)
+    expect(result).toBe('forge')
   })
 })

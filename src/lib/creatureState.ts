@@ -2,6 +2,8 @@ import type { Task, AgentSession } from './types'
 
 export type CreatureState = 'egg' | 'idle' | 'active' | 'needs-input' | 'resting' | 'celebrating' | 'sad' | 'frozen'
 
+export type CreatureRoom = 'forge' | 'warRoom' | 'nursery'
+
 export function computeCreatureState(task: Task, session: AgentSession | null): CreatureState {
   // Backlog tasks are always eggs
   if (task.status === 'backlog') {
@@ -34,4 +36,12 @@ export function computeCreatureState(task: Task, session: AgentSession | null): 
 
   // Fallback for any other task status
   return 'idle'
+}
+
+export function computeCreatureRoom(task: Task, session: AgentSession | null): CreatureRoom {
+  if (task.status === 'backlog') return 'nursery'
+  if (!session) return 'forge'
+  if (session.status === 'running' || session.status === 'completed') return 'forge'
+  if (session.status === 'paused' || session.status === 'failed' || session.status === 'interrupted') return 'warRoom'
+  return 'forge'
 }
