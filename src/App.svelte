@@ -35,6 +35,7 @@
   let appMode = $state<string | null>(null)
   let showShortcutsDialog = $state(false)
   let showProjectSwitcher = $state(false)
+  let workQueueRefreshTrigger = $state(0)
 
   let selectedTask = $derived($tasks.find(t => t.id === $selectedTaskId) || null)
 
@@ -291,6 +292,7 @@
         }
         loadTasks()
         loadProjectAttention()
+        workQueueRefreshTrigger++
       })
     )
 
@@ -586,6 +588,7 @@
           $taskSpawned = { taskId: event.payload.task_id, title: event.payload.task_id }
         }
         loadTasks()
+        workQueueRefreshTrigger++
       })
     )
 
@@ -680,7 +683,7 @@
            }}
          />
        {:else if $currentView === 'workqueue'}
-         <WorkQueueView />
+         <WorkQueueView refreshTrigger={workQueueRefreshTrigger} />
        {:else if selectedTask}
         <TaskDetailView task={selectedTask} onRunAction={handleRunAction} />
       {:else}

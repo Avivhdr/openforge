@@ -154,4 +154,27 @@ describe('WorkQueueView', () => {
       expect(getWorkQueueTasks).toHaveBeenCalledTimes(1)
     })
   })
+
+  it('re-fetches when refreshTrigger changes', async () => {
+    vi.mocked(getWorkQueueTasks).mockResolvedValue([
+      makeWorkQueueTask({ id: 'T-1' }),
+    ])
+
+    const { rerender } = render(WorkQueueView, { props: { refreshTrigger: 0 } })
+
+    await waitFor(() => {
+      expect(getWorkQueueTasks).toHaveBeenCalledTimes(1)
+    })
+
+    vi.mocked(getWorkQueueTasks).mockResolvedValue([
+      makeWorkQueueTask({ id: 'T-1' }),
+      makeWorkQueueTask({ id: 'T-2', title: 'New task' }),
+    ])
+
+    await rerender({ refreshTrigger: 1 })
+
+    await waitFor(() => {
+      expect(getWorkQueueTasks).toHaveBeenCalledTimes(2)
+    })
+  })
 })
