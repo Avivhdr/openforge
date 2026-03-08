@@ -13,6 +13,7 @@
    import PrReviewView from './components/PrReviewView.svelte'
    import SkillsView from './components/SkillsView.svelte'
    import CreaturesView from './components/CreaturesView.svelte'
+   import WorkQueueView from './components/WorkQueueView.svelte'
    import Toast from './components/Toast.svelte'
   import CheckpointToast from './components/CheckpointToast.svelte'
   import CiFailureToast from './components/CiFailureToast.svelte'
@@ -679,9 +680,7 @@
            }}
          />
        {:else if $currentView === 'workqueue'}
-         <div class="flex-1 overflow-hidden flex items-center justify-center">
-           <span class="text-base-content/50">Work Queue (coming soon)</span>
-         </div>
+         <WorkQueueView />
        {:else if selectedTask}
         <TaskDetailView task={selectedTask} onRunAction={handleRunAction} />
       {:else}

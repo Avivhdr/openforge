@@ -1,0 +1,97 @@
+<script lang="ts">
+  import type { WorkQueueTask } from '../lib/types'
+  import { getWorkQueueTasks } from '../lib/ipc'
+  import { activeProjectId, currentView, selectedTaskId } from '../lib/stores'
+  import { pushNavState } from '../lib/navigation'
+  import { timeAgoFromSeconds } from '../lib/timeAgo'
+  import Card from './Card.svelte'
+
+  interface Props {
+    refreshTrigger?: number
+  }
+
+  let { refreshTrigger = 0 }: Props = $props()
+
+  let tasks = $state<WorkQueueTask[]>([])
+  let loading = $state(true)
+
+  let grouped = $derived(groupByProject(tasks))
+
+  function groupByProject(items: WorkQueueTask[]): Map<string, WorkQueueTask[]> {
+    const map = new Map<string, WorkQueueTask[]>()
+    for (const task of items) {
+      const existing = map.get(task.project_name)
+      if (existing) {
+        existing.push(task)
+      } else {
+        map.set(task.project_name, [task])
+      }
+    }
+    return map
+  }
+
+  async function loadTasks() {
+    loading = true
+    try {
+      tasks = await getWorkQueueTasks()
+    } catch (e) {
+      console.error('Failed to load work queue tasks:', e)
+      tasks = []
+    } finally {
+      loading = false
+    }
+  }
+
+  function handleTaskClick(task: WorkQueueTask) {
+    pushNavState()
+    $activeProjectId = task.project_id
+    $currentView = 'board'
+    $selectedTaskId = task.id
+  }
+
+  $effect(() => {
+    loadTasks()
+  })
+
+  $effect(() => {
+    if (refreshTrigger > 0) {
+      loadTasks()
+    }
+  })
+</script>
+
+{#if loading}
+  <div class="flex-1 overflow-hidden flex items-center justify-center">
+    <span class="text-base-content/50">Loading...</span>
+  </div>
+{:else if tasks.length === 0}
+  <div class="flex-1 overflow-hidden flex items-center justify-center">
+    <span class="text-base-content/50">No tasks waiting for review</span>
+  </div>
+{:else}
+  <div class="flex-1 overflow-auto p-6">
+    <div class="flex gap-6 items-start">
+      {#each [...grouped] as [projectName, projectTasks]}
+        <div class="min-w-[280px] max-w-[320px]">
+          <h2 class="font-mono text-sm font-semibold text-base-content mb-3 px-1">{projectName}</h2>
+          <div class="flex flex-col gap-2">
+            {#each projectTasks as task}
+              <Card onclick={() => handleTaskClick(task)} class="block px-3.5 py-3">
+                <div class="flex items-center justify-between mb-1">
+                  <span class="font-mono text-xs font-semibold text-primary">{task.id}</span>
+                  <span class="font-mono text-[0.6rem] text-base-content/40">{timeAgoFromSeconds(task.session_completed_at)}</span>
+                </div>
+                <div class="font-mono text-sm font-medium leading-relaxed text-base-content mb-1">
+                  {task.title.length > 80 ? task.title.slice(0, 80) + '...' : task.title}
+                </div>
+                {#if task.summary}
+                  <div class="text-xs text-base-content/50 truncate">{task.summary}</div>
+                {/if}
+              </Card>
+            {/each}
+          </div>
+        </div>
+      {/each}
+    </div>
+  </div>
+{/if}
