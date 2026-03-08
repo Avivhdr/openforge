@@ -321,7 +321,7 @@ export interface WorkQueueTask {
   summary: string | null;
   project_id: string;
   project_name: string;
-  session_completed_at: number;
+  session_completed_at: number | null;
 }
 
 export interface PtySpawnRequest {

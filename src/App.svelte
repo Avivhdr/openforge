@@ -238,7 +238,7 @@
       const searchInput = document.querySelector('[data-search-input]') as HTMLInputElement
       searchInput?.focus()
     }
-    if (e.altKey && e.key === 'r') {
+    if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key === 'r') {
       e.preventDefault()
       pushNavState()
       $currentView = 'workqueue'
@@ -788,7 +788,7 @@
           </div>
           <div class="flex items-center justify-between">
             <span class="text-sm text-base-content">Work queue</span>
-            <kbd class="kbd kbd-sm">⌥R</kbd>
+            <kbd class="kbd kbd-sm">⌘R</kbd>
           </div>
         </div>
       </div>

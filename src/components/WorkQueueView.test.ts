@@ -114,6 +114,18 @@ describe('WorkQueueView', () => {
     expect(screen.queryByText('null')).toBeNull()
   })
 
+  it('shows no session label when session_completed_at is null', async () => {
+    vi.mocked(getWorkQueueTasks).mockResolvedValue([
+      makeWorkQueueTask({ session_completed_at: null }),
+    ])
+
+    render(WorkQueueView)
+
+    await waitFor(() => {
+      expect(screen.getByText('no session')).toBeTruthy()
+    })
+  })
+
   it('navigates to project board on task click', async () => {
     vi.mocked(getWorkQueueTasks).mockResolvedValue([
       makeWorkQueueTask({ id: 'T-5', project_id: 'proj-42', project_name: 'My Project' }),

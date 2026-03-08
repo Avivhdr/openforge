@@ -79,7 +79,7 @@
               <Card onclick={() => handleTaskClick(task)} class="block px-3.5 py-3">
                 <div class="flex items-center justify-between mb-1">
                   <span class="font-mono text-xs font-semibold text-primary">{task.id}</span>
-                  <span class="font-mono text-[0.6rem] text-base-content/40">{timeAgoFromSeconds(task.session_completed_at)}</span>
+                  <span class="font-mono text-[0.6rem] text-base-content/40">{task.session_completed_at ? timeAgoFromSeconds(task.session_completed_at) : 'no session'}</span>
                 </div>
                 <div class="font-mono text-sm font-medium leading-relaxed text-base-content mb-1">
                   {task.title.length > 80 ? task.title.slice(0, 80) + '...' : task.title}
