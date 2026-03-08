@@ -61,6 +61,11 @@
        $selectedTaskId = null
      }
    })
+   $effect(() => {
+     if ($currentView === 'workqueue') {
+       $selectedTaskId = null
+     }
+   })
 
    // Reload tasks when active project changes
   $effect(() => {
@@ -230,6 +235,12 @@
       e.preventDefault()
       const searchInput = document.querySelector('[data-search-input]') as HTMLInputElement
       searchInput?.focus()
+    }
+    if (e.altKey && e.key === 'r') {
+      e.preventDefault()
+      pushNavState()
+      $currentView = 'workqueue'
+      return
     }
   }
 
@@ -667,6 +678,10 @@
              $selectedTaskId = taskId
            }}
          />
+       {:else if $currentView === 'workqueue'}
+         <div class="flex-1 overflow-hidden flex items-center justify-center">
+           <span class="text-base-content/50">Work Queue (coming soon)</span>
+         </div>
        {:else if selectedTask}
         <TaskDetailView task={selectedTask} onRunAction={handleRunAction} />
       {:else}
@@ -768,6 +783,10 @@
           <div class="flex items-center justify-between">
             <span class="text-sm text-base-content">Show shortcuts</span>
             <kbd class="kbd kbd-sm">?</kbd>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-sm text-base-content">Work queue</span>
+            <kbd class="kbd kbd-sm">⌥R</kbd>
           </div>
         </div>
       </div>
