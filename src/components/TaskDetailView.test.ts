@@ -362,8 +362,9 @@ describe('TaskDetailView', () => {
   })
 
   it('does not navigate away when task is moved to done', async () => {
+    const doingTask: Task = { ...baseTask, status: 'doing' }
     selectedTaskId.set('T-42')
-    render(TaskDetailView, { props: { task: baseTask, onRunAction: mockOnRunAction } })
+    render(TaskDetailView, { props: { task: doingTask, onRunAction: mockOnRunAction } })
     await fireEvent.click(screen.getByText('Move to Done'))
     const { updateTaskStatus } = await import('../lib/ipc')
     expect(updateTaskStatus).toHaveBeenCalledWith('T-42', 'done')

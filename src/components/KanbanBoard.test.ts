@@ -11,6 +11,7 @@ vi.mock('../lib/ipc', () => ({
   updateTaskStatus: vi.fn(),
   deleteTask: vi.fn(),
   clearDoneTasks: vi.fn(),
+  runAction: vi.fn(),
 }))
 
 const baseTask: Task = {
@@ -31,8 +32,11 @@ const baseTask: Task = {
   permission_mode: 'default',
 }
 
+const mockOnRunAction = vi.fn()
+
 describe('KanbanBoard', () => {
   beforeEach(() => {
+    vi.clearAllMocks()
     tasks.set([baseTask])
     activeSessions.set(new Map())
     activeProjectId.set('proj-1')
@@ -40,13 +44,13 @@ describe('KanbanBoard', () => {
   })
 
   it('renders backlog and doing columns by default', () => {
-    render(KanbanBoard)
+    render(KanbanBoard, { props: { onRunAction: mockOnRunAction } })
     expect(screen.getByText('// backlog')).toBeTruthy()
     expect(screen.getByText('// doing')).toBeTruthy()
   })
 
   it('does not show done column by default (requires drawer toggle)', () => {
-    render(KanbanBoard)
+    render(KanbanBoard, { props: { onRunAction: mockOnRunAction } })
     // Done column header should not be in the DOM (drawer is closed)
     expect(screen.queryByText('// done')).toBeNull()
   })
@@ -55,7 +59,7 @@ describe('KanbanBoard', () => {
     const doneTask: Task = { ...baseTask, id: 'T-2', title: 'Done task', status: 'done' }
     tasks.set([baseTask, doneTask])
 
-    render(KanbanBoard)
+    render(KanbanBoard, { props: { onRunAction: mockOnRunAction } })
 
     // Click the "done" toggle button
     const doneToggle = screen.getByTitle('Toggle done drawer (c)')
@@ -67,7 +71,7 @@ describe('KanbanBoard', () => {
   })
 
   it('hides backlog column when toggle is clicked', async () => {
-    render(KanbanBoard)
+    render(KanbanBoard, { props: { onRunAction: mockOnRunAction } })
 
     // Backlog column header is visible
     expect(screen.getByText('// backlog')).toBeTruthy()
@@ -82,7 +86,7 @@ describe('KanbanBoard', () => {
   })
 
   it('renders tasks in correct columns', () => {
-    render(KanbanBoard)
+    render(KanbanBoard, { props: { onRunAction: mockOnRunAction } })
     expect(screen.getByText('Test task')).toBeTruthy()
   })
 
@@ -91,7 +95,7 @@ describe('KanbanBoard', () => {
     const taskB: Task = { ...baseTask, id: 'T-2', title: 'Add dashboard', status: 'backlog' }
     tasks.set([taskA, taskB])
 
-    render(KanbanBoard)
+    render(KanbanBoard, { props: { onRunAction: mockOnRunAction } })
 
     // Both visible initially
     expect(screen.getByText('Fix auth bug')).toBeTruthy()
@@ -110,7 +114,7 @@ describe('KanbanBoard', () => {
     tasks.set([taskA, taskB])
 
     searchQuery.set('T-100')
-    render(KanbanBoard)
+    render(KanbanBoard, { props: { onRunAction: mockOnRunAction } })
     await new Promise(resolve => setTimeout(resolve, 10))
 
     expect(screen.getByText('First task')).toBeTruthy()
@@ -123,7 +127,7 @@ describe('KanbanBoard', () => {
     tasks.set([taskA, taskB])
 
     searchQuery.set('PROJ')
-    render(KanbanBoard)
+    render(KanbanBoard, { props: { onRunAction: mockOnRunAction } })
     await new Promise(resolve => setTimeout(resolve, 10))
 
     expect(screen.getByText('Task A')).toBeTruthy()
@@ -135,7 +139,7 @@ describe('KanbanBoard', () => {
     tasks.set([taskA])
 
     searchQuery.set('fix auth')
-    render(KanbanBoard)
+    render(KanbanBoard, { props: { onRunAction: mockOnRunAction } })
     await new Promise(resolve => setTimeout(resolve, 10))
 
     expect(screen.getByText('Fix Auth Bug')).toBeTruthy()
@@ -147,7 +151,7 @@ describe('KanbanBoard', () => {
     tasks.set([taskA, taskB])
 
     searchQuery.set('Task A')
-    render(KanbanBoard)
+    render(KanbanBoard, { props: { onRunAction: mockOnRunAction } })
     await new Promise(resolve => setTimeout(resolve, 10))
 
     expect(screen.getByText('Task A')).toBeTruthy()
@@ -161,5 +165,35 @@ describe('KanbanBoard', () => {
     expect(screen.getByText('Task B')).toBeTruthy()
   })
 
+  it('shows Start Task in context menu for backlog tasks', async () => {
+    render(KanbanBoard, { props: { onRunAction: mockOnRunAction } })
+
+    const taskCard = screen.getByText('Test task')
+    await fireEvent.contextMenu(taskCard)
+
+    expect(screen.getByText('Start Task')).toBeTruthy()
+  })
+
+  it('does not show Start Task in context menu for doing tasks', async () => {
+    const doingTask: Task = { ...baseTask, id: 'T-2', title: 'Active task', status: 'doing' }
+    tasks.set([doingTask])
+
+    render(KanbanBoard, { props: { onRunAction: mockOnRunAction } })
+
+    const taskCard = screen.getByText('Active task')
+    await fireEvent.contextMenu(taskCard)
+
+    expect(screen.queryByText('Start Task')).toBeNull()
+  })
+
+  it('calls onRunAction when Start Task is clicked in context menu', async () => {
+    render(KanbanBoard, { props: { onRunAction: mockOnRunAction } })
+
+    const taskCard = screen.getByText('Test task')
+    await fireEvent.contextMenu(taskCard)
+    await fireEvent.click(screen.getByText('Start Task'))
+
+    expect(mockOnRunAction).toHaveBeenCalledWith({ taskId: 'T-1', actionPrompt: '', agent: null })
+  })
 
 })

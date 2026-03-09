@@ -5,12 +5,12 @@
   import { updateTaskStatus, deleteTask, clearDoneTasks } from '../lib/ipc'
   import { pushNavState } from '../lib/navigation'
   import TaskCard from './TaskCard.svelte'
-  import Modal from './Modal.svelte'
 
   interface Props {
+    onRunAction: (data: { taskId: string; actionPrompt: string; agent: string | null }) => void
   }
 
-  let { }: Props = $props()
+  let { onRunAction }: Props = $props()
 
   // Column visibility state
   let showBacklog = $state(true)
@@ -82,15 +82,23 @@
     $selectedTaskId = taskId
   }
 
-  let contextMenu = $state({ visible: false, x: 0, y: 0, taskId: '', showMoveSubmenu: false })
+  let contextMenu = $state({ visible: false, x: 0, y: 0, taskId: '', taskStatus: '' as KanbanColumn | '', showMoveSubmenu: false })
 
   function handleContextMenu(event: MouseEvent, taskId: string) {
     event.preventDefault()
-    contextMenu = { visible: true, x: event.clientX, y: event.clientY, taskId, showMoveSubmenu: false }
+    const task = $tasks.find(t => t.id === taskId)
+    const taskStatus = (task?.status ?? '') as KanbanColumn | ''
+    contextMenu = { visible: true, x: event.clientX, y: event.clientY, taskId, taskStatus, showMoveSubmenu: false }
   }
 
   function closeContextMenu() {
     contextMenu = { ...contextMenu, visible: false, showMoveSubmenu: false }
+  }
+
+  function handleStartTask() {
+    const taskId = contextMenu.taskId
+    closeContextMenu()
+    onRunAction({ taskId, actionPrompt: '', agent: null })
   }
 
   function toggleMoveSubmenu() {
@@ -275,6 +283,11 @@
 <!-- Context menu -->
 {#if contextMenu.visible}
   <div class="fixed z-[100] bg-base-300 border border-base-300 rounded-lg shadow-xl min-w-[180px] p-1" style="left: {contextMenu.x}px; top: {contextMenu.y}px;">
+    {#if contextMenu.taskStatus === 'backlog'}
+      <button class="context-item block w-full text-left px-3 py-2 text-sm text-primary font-medium cursor-pointer rounded hover:bg-primary hover:text-primary-content" onclick={handleStartTask}>
+        Start Task
+      </button>
+    {/if}
     <button class="context-item block w-full text-left px-3 py-2 text-sm text-base-content cursor-pointer rounded hover:bg-primary hover:text-primary-content" onclick={(e: MouseEvent) => { e.stopPropagation(); toggleMoveSubmenu() }}>
       Move to... ›
     </button>
