@@ -126,6 +126,7 @@ async fn resume_task_servers(app: tauri::AppHandle, http_ready: tokio::sync::one
             worktree_path,
             None,
             None,
+            None,
             &app,
         ).await {
             Ok(result) => {
@@ -344,6 +345,7 @@ fn main() {
             commands::tasks::update_task_status,
             commands::tasks::delete_task,
             commands::tasks::clear_done_tasks,
+            commands::tasks::get_work_queue_tasks,
             commands::projects::create_project,
             commands::projects::get_projects,
             commands::projects::update_project,

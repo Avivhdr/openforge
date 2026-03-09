@@ -2,8 +2,9 @@
   import { onMount, onDestroy } from 'svelte'
   import { listen } from '@tauri-apps/api/event'
   import type { UnlistenFn, Event } from '@tauri-apps/api/event'
-  import { tasks, selectedTaskId, activeSessions, checkpointNotification, ciFailureNotification, ticketPrs, error, isLoading, projects, activeProjectId, currentView, reviewRequestCount, projectAttention, taskSpawned, searchQuery, selectedSkillName, runningTerminals } from './lib/stores'
-  import { getProjects, getTasksForProject, getPullRequests, runAction, getSessionStatus, getLatestSession, getLatestSessions, forceGithubSync, createTask, updateTask, getProjectAttention, getAppMode, finalizeClaudeSession, getRunningPtyTaskIds } from './lib/ipc'
+  import { tasks, selectedTaskId, activeSessions, checkpointNotification, ciFailureNotification, ticketPrs, error, isLoading, projects, activeProjectId, currentView, reviewRequestCount, projectAttention, taskSpawned, searchQuery, selectedSkillName, runningTerminals, creaturesEnabled } from './lib/stores'
+  import { getProjects, getTasksForProject, getPullRequests, runAction, getSessionStatus, getLatestSession, getLatestSessions, forceGithubSync, createTask, updateTask, getProjectAttention, getAppMode, finalizeClaudeSession, getRunningPtyTaskIds, getConfig, getAgents } from './lib/ipc'
+  import SearchableSelect from './components/SearchableSelect.svelte'
   import type { Task, PullRequestInfo, AgentEvent, ProjectAttention, AppView } from './lib/types'
   import KanbanBoard from './components/KanbanBoard.svelte'
   import TaskDetailView from './components/TaskDetailView.svelte'
@@ -13,6 +14,7 @@
    import PrReviewView from './components/PrReviewView.svelte'
    import SkillsView from './components/SkillsView.svelte'
    import CreaturesView from './components/CreaturesView.svelte'
+   import WorkQueueView from './components/WorkQueueView.svelte'
    import Toast from './components/Toast.svelte'
   import CheckpointToast from './components/CheckpointToast.svelte'
   import CiFailureToast from './components/CiFailureToast.svelte'
@@ -30,10 +32,31 @@
   let showAddDialog = $state(false)
   let isSyncing = $state(false)
   let editingTask = $state<Task | null>(null)
+  let dialogAiProvider = $state<string | null>(null)
+  let dialogAgents = $state<string[]>([])
+  let dialogSelectedAgent = $state('')
+
+  async function loadDialogAgentInfo() {
+    dialogSelectedAgent = ''
+    try {
+      const provider = await getConfig('ai_provider')
+      dialogAiProvider = provider ?? 'claude-code'
+      if (dialogAiProvider !== 'claude-code') {
+        const agents = await getAgents()
+        dialogAgents = agents.map(a => a.name)
+      } else {
+        dialogAgents = []
+      }
+    } catch {
+      dialogAiProvider = null
+      dialogAgents = []
+    }
+  }
   let showProjectSetup = $state(false)
   let appMode = $state<string | null>(null)
   let showShortcutsDialog = $state(false)
   let showProjectSwitcher = $state(false)
+  let workQueueRefreshTrigger = $state(0)
 
   let selectedTask = $derived($tasks.find(t => t.id === $selectedTaskId) || null)
 
@@ -58,6 +81,15 @@
    
    $effect(() => {
      if ($currentView === 'creatures') {
+       if (!$creaturesEnabled) {
+         $currentView = 'board'
+         return
+       }
+       $selectedTaskId = null
+     }
+   })
+   $effect(() => {
+     if ($currentView === 'workqueue') {
        $selectedTaskId = null
      }
    })
@@ -228,6 +260,7 @@
       if (!showAddDialog) {
         editingTask = null
         showAddDialog = true
+        loadDialogAgentInfo()
       }
     }
     if ((e.metaKey || e.ctrlKey) && (e.key === '[' || e.key === 'ArrowLeft')) {
@@ -246,6 +279,12 @@
       e.preventDefault()
       const searchInput = document.querySelector('[data-search-input]') as HTMLInputElement
       searchInput?.focus()
+    }
+    if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key === 'r') {
+      e.preventDefault()
+      pushNavState()
+      $currentView = 'workqueue'
+      return
     }
   }
 
@@ -295,6 +334,7 @@
         }
         loadTasks()
         loadProjectAttention()
+        workQueueRefreshTrigger++
       })
     )
 
@@ -590,6 +630,7 @@
           $taskSpawned = { taskId: event.payload.task_id, title: event.payload.task_id }
         }
         loadTasks()
+        workQueueRefreshTrigger++
       })
     )
 
@@ -601,6 +642,13 @@
     } catch (e) {
       console.error('[App] Failed to get app mode:', e)
       // Graceful degradation: no badge shown if call fails
+    }
+
+    try {
+      const creaturesVal = await getConfig('creatures_enabled')
+      $creaturesEnabled = creaturesVal === 'true'
+    } catch (e) {
+      console.error('[App] Failed to load creatures_enabled config:', e)
     }
     loadProjectAttention()
 
@@ -618,7 +666,7 @@
 </script>
 
 <div class="flex h-screen overflow-hidden bg-base-200">
-  <IconRail currentView={$currentView} onNavigate={handleNavigate} reviewRequestCount={$reviewRequestCount} />
+  <IconRail currentView={$currentView} onNavigate={handleNavigate} reviewRequestCount={$reviewRequestCount} creaturesEnabled={$creaturesEnabled} />
 
   <div class="flex flex-col flex-1 min-w-0">
     <header class="bg-neutral text-neutral-content h-12 flex items-center justify-between px-6 shrink-0">
@@ -637,6 +685,7 @@
           onclick={() => {
             editingTask = null
             showAddDialog = true
+            loadDialogAgentInfo()
           }}
         >
           + new_task <span class="text-[0.65rem] opacity-70 ml-1 font-normal">&#8984;T</span>
@@ -687,6 +736,8 @@
              $selectedTaskId = taskId
            }}
          />
+       {:else if $currentView === 'workqueue'}
+         <WorkQueueView refreshTrigger={workQueueRefreshTrigger} />
        {:else if selectedTask}
         <TaskDetailView task={selectedTask} onRunAction={handleRunAction} />
       {:else}
@@ -718,7 +769,7 @@
                   if (editingTask) {
                     await updateTask(editingTask.id, prompt, jiraKey)
                   } else {
-                    await createTask(prompt, 'backlog', jiraKey, $activeProjectId)
+                    await createTask(prompt, 'backlog', jiraKey, $activeProjectId, dialogSelectedAgent || null, null)
                   }
                   showAddDialog = false
                   editingTask = null
@@ -728,8 +779,38 @@
                   $error = String(e)
                 }
               }}
+              onStartTask={editingTask ? undefined : async (prompt, jiraKey) => {
+                try {
+                  const agent = dialogSelectedAgent || null
+                  const newTask = await createTask(prompt, 'backlog', jiraKey, $activeProjectId, agent, null)
+                  showAddDialog = false
+                  editingTask = null
+                  await loadTasks()
+                  await handleRunAction({ taskId: newTask.id, actionPrompt: '', agent })
+                } catch (e) {
+                  console.error('Failed to start task:', e)
+                  $error = String(e)
+                }
+              }}
               onCancel={() => { showAddDialog = false; editingTask = null }}
-            />
+            >
+              {#snippet extras()}
+                {#if !editingTask && dialogAiProvider !== 'claude-code' && dialogAgents.length > 0}
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs text-base-content/50 font-medium shrink-0">Agent</span>
+                    <div class="flex-1">
+                      <SearchableSelect
+                        options={[{ value: '', label: 'Default' }, ...dialogAgents.map(a => ({ value: a, label: a }))]}
+                        value={dialogSelectedAgent}
+                        placeholder="Search agents..."
+                        size="xs"
+                        onSelect={(v) => { dialogSelectedAgent = v }}
+                      />
+                    </div>
+                  </div>
+                {/if}
+              {/snippet}
+            </PromptInput>
           </div>
         </Modal>
       {/if}
@@ -788,6 +869,10 @@
           <div class="flex items-center justify-between">
             <span class="text-sm text-base-content">Show shortcuts</span>
             <kbd class="kbd kbd-sm">?</kbd>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-sm text-base-content">Work queue</span>
+            <kbd class="kbd kbd-sm">⌘R</kbd>
           </div>
         </div>
       </div>

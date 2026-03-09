@@ -1,22 +1,30 @@
 <script lang="ts">
-  import { LayoutDashboard, GitPullRequest, Settings, Sparkles, Bug } from 'lucide-svelte'
+  import { LayoutDashboard, GitPullRequest, Settings, Sparkles, Bug, ListChecks } from 'lucide-svelte'
   import type { AppView } from '../lib/types'
 
   interface Props {
     currentView: AppView
     onNavigate: (view: AppView) => void
     reviewRequestCount: number
+    creaturesEnabled: boolean
   }
 
-  let { currentView, onNavigate, reviewRequestCount = 0 }: Props = $props()
+  let { currentView, onNavigate, reviewRequestCount = 0, creaturesEnabled = false }: Props = $props()
 
-  const navItems: { view: AppView; Icon: typeof LayoutDashboard }[] = [
+  const allNavItems: { view: AppView; Icon: typeof LayoutDashboard }[] = [
     { view: 'board', Icon: LayoutDashboard },
     { view: 'pr_review', Icon: GitPullRequest },
     { view: 'skills', Icon: Sparkles },
     { view: 'creatures', Icon: Bug },
+    { view: 'workqueue', Icon: ListChecks },
     { view: 'settings', Icon: Settings },
   ]
+
+  let navItems = $derived(
+    creaturesEnabled
+      ? allNavItems
+      : allNavItems.filter(item => item.view !== 'creatures')
+  )
 </script>
 
 <div class="w-16 h-full bg-neutral flex flex-col items-center py-4 gap-5">

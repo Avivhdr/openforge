@@ -9,6 +9,8 @@ export interface Task {
   jira_description: string | null;
   prompt: string | null;
   summary: string | null;
+  agent: string | null;
+  permission_mode: string | null;
   project_id: string | null;
   created_at: number;
   updated_at: number;
@@ -312,7 +314,18 @@ export interface AgentReviewComment {
 }
 
 /** App-level view for top-bar navigation */
-export type AppView = "board" | "pr_review" | "skills" | "creatures" | "settings";
+export type AppView = "board" | "pr_review" | "skills" | "creatures" | "settings" | "workqueue";
+
+export interface WorkQueueTask {
+  id: string;
+  title: string;
+  status: string;
+  summary: string | null;
+  project_id: string;
+  project_name: string;
+  session_completed_at: number | null;
+  session_status: string | null;
+}
 
 export interface PtySpawnRequest {
   task_id: string;
@@ -352,7 +365,6 @@ export interface Action {
   id: string;
   name: string;
   prompt: string;
-  agent: string | null;
   builtin: boolean;
   enabled: boolean;
 }
@@ -386,7 +398,7 @@ export interface WhisperModelStatus {
 // ============================================================================
 
 /** Permission mode for Claude Code sessions */
-export type PermissionMode = 'default' | 'acceptEdits' | 'plan' | 'bypassPermissions';
+export type PermissionMode = 'default' | 'acceptEdits' | 'plan' | 'bypassPermissions' | 'dontAsk';
 
 /** A tool call made by Claude during a session */
 export interface SDKToolCall {

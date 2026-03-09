@@ -12,6 +12,14 @@ pub async fn get_tasks(
 }
 
 #[tauri::command]
+pub async fn get_work_queue_tasks(
+    db: State<'_, Arc<Mutex<db::Database>>>,
+) -> Result<Vec<db::WorkQueueTaskRow>, String> {
+    let db = crate::db::acquire_db(&db);
+    db.get_work_queue_tasks()
+}
+
+#[tauri::command]
 pub async fn get_task_detail(
     db: State<'_, Arc<Mutex<db::Database>>>,
     task_id: String,
@@ -31,9 +39,11 @@ pub async fn create_task(
     jira_key: Option<String>,
     project_id: Option<String>,
     prompt: Option<String>,
+    agent: Option<String>,
+    permission_mode: Option<String>,
 ) -> Result<db::TaskRow, String> {
     let db = crate::db::acquire_db(&db);
-    let task = db.create_task(&title, &status, jira_key.as_deref(), project_id.as_deref(), prompt.as_deref())
+    let task = db.create_task(&title, &status, jira_key.as_deref(), project_id.as_deref(), prompt.as_deref(), agent.as_deref(), permission_mode.as_deref())
         .map_err(|e| format!("Failed to create task: {}", e))?;
     let _ = app.emit("task-changed", serde_json::json!({ "action": "created", "task_id": task.id }));
     Ok(task)
