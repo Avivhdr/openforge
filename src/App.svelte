@@ -2,7 +2,7 @@
   import { onMount, onDestroy } from 'svelte'
   import { listen } from '@tauri-apps/api/event'
   import type { UnlistenFn, Event } from '@tauri-apps/api/event'
-  import { tasks, selectedTaskId, activeSessions, checkpointNotification, ciFailureNotification, ticketPrs, error, isLoading, projects, activeProjectId, currentView, reviewRequestCount, projectAttention, taskSpawned, searchQuery, selectedSkillName, runningTerminals, creaturesEnabled } from './lib/stores'
+  import { tasks, selectedTaskId, activeSessions, checkpointNotification, ciFailureNotification, ticketPrs, error, isLoading, projects, activeProjectId, currentView, reviewRequestCount, projectAttention, taskSpawned, searchQuery, selectedSkillName, runningTerminals, startingTasks, creaturesEnabled } from './lib/stores'
   import { getProjects, getTasksForProject, getPullRequests, runAction, getSessionStatus, getLatestSession, getLatestSessions, forceGithubSync, createTask, updateTask, getProjectAttention, getAppMode, finalizeClaudeSession, getRunningPtyTaskIds, getConfig, getAgents, writePty } from './lib/ipc'
   import SearchableSelect from './components/SearchableSelect.svelte'
   import type { Task, PullRequestInfo, AgentEvent, ProjectAttention, AppView } from './lib/types'
@@ -227,6 +227,10 @@
       return
     }
 
+    // Mark task as starting (worktree creation + agent spawn in progress)
+    $startingTasks = new Set($startingTasks).add(taskId)
+
+
     try {
       const result = await runAction(taskId, activeProject.path, actionPrompt, agent)
 
@@ -243,6 +247,11 @@
     } catch (e) {
       console.error('[session] Failed to run action for task:', taskId, e)
       $error = String(e)
+    } finally {
+      // Clear the starting state
+      const next = new Set($startingTasks)
+      next.delete(taskId)
+      $startingTasks = next
     }
   }
 
