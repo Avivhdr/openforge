@@ -271,6 +271,8 @@ pub async fn run_action(
         (task, project_id, instructions)
     };
 
+    let effective_agent = agent.or(task.agent.clone());
+
     let provider_name = {
         let db_lock = crate::db::acquire_db(&db);
         db_lock.get_config("ai_provider").ok().flatten().unwrap_or_else(|| "claude-code".to_string())
@@ -317,8 +319,8 @@ pub async fn run_action(
                         session,
                         std::path::Path::new(&w.worktree_path),
                         Some(&action_prompt),
-                        agent.as_deref(),
-                        None,
+                        effective_agent.as_deref(),
+                        task.permission_mode.as_deref(),
                         &app,
                     ).await?;
 
@@ -381,7 +383,7 @@ pub async fn run_action(
     }
 
     let prompt = build_task_prompt(&task, &action_prompt, additional_instructions.as_deref());
-    let result = provider.start(&task_id, &worktree_path, &prompt, agent.as_deref(), None, &app).await?;
+    let result = provider.start(&task_id, &worktree_path, &prompt, effective_agent.as_deref(), task.permission_mode.as_deref(), &app).await?;
 
     if provider_name != "claude-code" {
         let db = crate::db::acquire_db(&db);
