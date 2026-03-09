@@ -15,6 +15,8 @@ vi.mock('../lib/ipc', () => ({
     jira_description: null,
     prompt: null,
     summary: null,
+    agent: null,
+    permission_mode: null,
     project_id: null,
     created_at: 1000,
     updated_at: 1000,
@@ -35,6 +37,8 @@ const mockTask: Task = {
   jira_description: null,
   prompt: null,
   summary: null,
+  agent: null,
+  permission_mode: null,
   project_id: null,
   created_at: 1000,
   updated_at: 2000,
@@ -82,7 +86,7 @@ describe('AddTaskDialog', () => {
     await fireEvent.click(submitBtn)
     
     await new Promise((r) => setTimeout(r, 10))
-    expect(createTask).toHaveBeenCalledWith('My new task', 'backlog', 'PROJ-456', null)
+    expect(createTask).toHaveBeenCalledWith('My new task', 'backlog', 'PROJ-456', null, null, null)
   })
 
   it('pre-fills fields in edit mode', () => {

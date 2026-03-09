@@ -222,7 +222,7 @@ pub async fn start_implementation(
     }
 
     let prompt = build_task_prompt(&task, "Implement this task. Create a branch, make the changes, and create a pull request when done.", additional_instructions.as_deref());
-    let result = provider.start(&task_id, &worktree_path, &prompt, None, &app).await?;
+    let result = provider.start(&task_id, &worktree_path, &prompt, None, None, &app).await?;
 
     if provider_name != "claude-code" {
         let db = crate::db::acquire_db(&db);
@@ -318,6 +318,7 @@ pub async fn run_action(
                         std::path::Path::new(&w.worktree_path),
                         Some(&action_prompt),
                         agent.as_deref(),
+                        None,
                         &app,
                     ).await?;
 
@@ -380,7 +381,7 @@ pub async fn run_action(
     }
 
     let prompt = build_task_prompt(&task, &action_prompt, additional_instructions.as_deref());
-    let result = provider.start(&task_id, &worktree_path, &prompt, agent.as_deref(), &app).await?;
+    let result = provider.start(&task_id, &worktree_path, &prompt, agent.as_deref(), None, &app).await?;
 
     if provider_name != "claude-code" {
         let db = crate::db::acquire_db(&db);

@@ -44,7 +44,9 @@
           title.trim(),
           status,
           jiraKey.trim() || null,
-          $activeProjectId
+          $activeProjectId,
+          null,
+          null
         )
         onTaskSaved?.(newTask)
       } else if (task) {
