@@ -41,3 +41,6 @@ export const claudeSessionStates = writable<Map<string, ClaudeSessionState>>(new
 
 export const skills = writable<SkillInfo[]>([]);
 export const selectedSkillName = writable<string | null>(null);
+
+/** Set of task IDs that have a running shell terminal (PTY) */
+export const runningTerminals = writable<Set<string>>(new Set());
