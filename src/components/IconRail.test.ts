@@ -9,10 +9,10 @@ describe('IconRail', () => {
     expect(screen.getByText('>_')).toBeTruthy()
   })
 
-  it('renders 5 navigation buttons', () => {
+  it('renders 6 navigation buttons', () => {
     render(IconRail, { props: { currentView: 'board' as AppView, onNavigate: vi.fn() } })
     const buttons = screen.getAllByRole('button')
-    expect(buttons).toHaveLength(5)
+    expect(buttons).toHaveLength(6)
   })
 
   it('clicking first button (dashboard) calls onNavigate with "board"', () => {
@@ -47,13 +47,21 @@ describe('IconRail', () => {
     expect(onNavigate).toHaveBeenCalledWith('creatures')
   })
 
-  it('clicking fifth button (settings) calls onNavigate with "settings"', () => {
+  it('clicking fifth button (workqueue) calls onNavigate with "workqueue"', () => {
     const onNavigate = vi.fn()
     render(IconRail, { props: { currentView: 'board' as AppView, onNavigate } })
     const buttons = screen.getAllByRole('button')
     fireEvent.click(buttons[4])
+    expect(onNavigate).toHaveBeenCalledWith('workqueue')
+  })
+  it('clicking sixth button (settings) calls onNavigate with "settings"', () => {
+    const onNavigate = vi.fn()
+    render(IconRail, { props: { currentView: 'board' as AppView, onNavigate } })
+    const buttons = screen.getAllByRole('button')
+    fireEvent.click(buttons[5])
     expect(onNavigate).toHaveBeenCalledWith('settings')
   })
+
 
   it('shows review request count badge when reviewRequestCount > 0', () => {
     render(IconRail, { props: { currentView: 'board' as AppView, onNavigate: vi.fn(), reviewRequestCount: 3 } })
