@@ -757,6 +757,7 @@
              $currentView = 'board'
              $selectedTaskId = taskId
            }}
+           onRunAction={handleRunAction}
          />
        {:else if $currentView === 'workqueue'}
          <WorkQueueView refreshTrigger={workQueueRefreshTrigger} />
