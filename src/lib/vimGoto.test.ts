@@ -14,10 +14,6 @@ describe('resolveGotoKey', () => {
     expect(resolveGotoKey('s')).toBe('skills')
   })
 
-  it('maps "c" to creatures', () => {
-    expect(resolveGotoKey('c')).toBe('creatures')
-  })
-
   it('maps "w" to workqueue', () => {
     expect(resolveGotoKey('w')).toBe('workqueue')
   })

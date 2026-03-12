@@ -4,7 +4,6 @@ const GOTO_MAP: Record<string, AppView> = {
   b: 'board',
   p: 'pr_review',
   s: 'skills',
-  c: 'creatures',
   w: 'workqueue',
   ',': 'settings',
 }
