@@ -2,7 +2,7 @@
   import { onMount, onDestroy } from 'svelte'
   import { listen } from '@tauri-apps/api/event'
   import type { UnlistenFn, Event } from '@tauri-apps/api/event'
-  import { tasks, selectedTaskId, activeSessions, checkpointNotification, ciFailureNotification, ticketPrs, error, isLoading, projects, activeProjectId, currentView, reviewRequestCount, authoredPrCount, projectAttention, taskSpawned, selectedSkillName, startingTasks, creaturesEnabled, codeCleanupTasksEnabled } from './lib/stores'
+  import { tasks, selectedTaskId, activeSessions, checkpointNotification, ciFailureNotification, ticketPrs, error, isLoading, projects, activeProjectId, currentView, reviewRequestCount, authoredPrCount, projectAttention, taskSpawned, selectedSkillName, startingTasks, codeCleanupTasksEnabled } from './lib/stores'
   import { getProjects, getTasksForProject, getPullRequests, startImplementation, getSessionStatus, getLatestSession, getLatestSessions, forceGithubSync, createTask, updateTask, updateTaskStatus, deleteTask, getProjectAttention, getAppMode, finalizeClaudeSession, getConfig, getProjectConfig, getAgents, getReviewPrs, getAuthoredPrs } from './lib/ipc'
   import { writePtyWithSubmit } from './lib/ptySubmit'
   import SearchableSelect from './components/SearchableSelect.svelte'
@@ -14,7 +14,6 @@
    import SettingsView from './components/SettingsView.svelte'
    import PrReviewView from './components/PrReviewView.svelte'
    import SkillsView from './components/SkillsView.svelte'
-   import CreaturesView from './components/CreaturesView.svelte'
    import WorkQueueView from './components/WorkQueueView.svelte'
    import Toast from './components/Toast.svelte'
   import CheckpointToast from './components/CheckpointToast.svelte'
@@ -107,15 +106,6 @@
      }
    })
    
-   $effect(() => {
-     if ($currentView === 'creatures') {
-       if (!$creaturesEnabled) {
-         $currentView = 'board'
-         return
-       }
-       $selectedTaskId = null
-     }
-   })
    $effect(() => {
      if ($currentView === 'workqueue') {
        $selectedTaskId = null
@@ -768,13 +758,6 @@
     }
 
     try {
-      const creaturesVal = await getConfig('creatures_enabled')
-      $creaturesEnabled = creaturesVal === 'true'
-    } catch (e) {
-      console.error('[App] Failed to load creatures_enabled config:', e)
-    }
-
-    try {
       const codeCleanupVal = await getConfig('code_cleanup_tasks_enabled')
       $codeCleanupTasksEnabled = codeCleanupVal === 'true'
     } catch (e) {
@@ -807,7 +790,7 @@
 </script>
 
 <div class="flex h-screen overflow-hidden bg-base-200">
-  <IconRail currentView={$currentView} onNavigate={handleNavigate} reviewRequestCount={$reviewRequestCount} authoredPrCount={$authoredPrCount} creaturesEnabled={$creaturesEnabled} />
+  <IconRail currentView={$currentView} onNavigate={handleNavigate} reviewRequestCount={$reviewRequestCount} authoredPrCount={$authoredPrCount} />
 
   <div class="flex flex-col flex-1 min-w-0">
     <header class="bg-neutral text-neutral-content h-12 flex items-center justify-between px-6 shrink-0">
@@ -863,15 +846,6 @@
         <PrReviewView />
        {:else if $currentView === 'skills'}
          <SkillsView onRunAction={handleRunAction} />
-       {:else if $currentView === 'creatures'}
-         <CreaturesView
-           onCreatureClick={(taskId) => {
-             pushNavState()
-             $currentView = 'board'
-             $selectedTaskId = taskId
-           }}
-           onRunAction={handleRunAction}
-         />
        {:else if $currentView === 'workqueue'}
          <WorkQueueView refreshTrigger={workQueueRefreshTrigger} />
        {:else if selectedTask}
