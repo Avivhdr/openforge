@@ -32,14 +32,14 @@ jobs:
       - name: Type check
         id: typecheck
         run: |
-          set +e
+          set +e -o pipefail
           pnpm exec tsc --noEmit 2>&1 | tee /tmp/typecheck.log
           echo "exit_code=$?" >> "$GITHUB_OUTPUT"
 
       - name: Run tests
         id: tests
         run: |
-          set +e
+          set +e -o pipefail
           pnpm test 2>&1 | tee /tmp/tests.log
           echo "exit_code=$?" >> "$GITHUB_OUTPUT"
 
@@ -133,7 +133,7 @@ jobs:
         id: tests
         working-directory: src-tauri
         run: |
-          set +e
+          set +e -o pipefail
           cargo test 2>&1 | tee /tmp/rust-tests.log
           echo "exit_code=$?" >> "$GITHUB_OUTPUT"
 
