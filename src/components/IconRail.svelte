@@ -13,13 +13,21 @@
 
   let { currentView, onNavigate, reviewRequestCount = 0, authoredPrCount = 0, modalsOpen = false }: Props = $props()
 
-  const navItems: { view: AppView; Icon: typeof LayoutDashboard; shortcut: string }[] = [
+  const projectItems: { view: AppView; Icon: typeof LayoutDashboard; shortcut: string }[] = [
     { view: 'board', Icon: LayoutDashboard, shortcut: 'H' },
     { view: 'pr_review', Icon: GitPullRequest, shortcut: 'G' },
     { view: 'skills', Icon: Sparkles, shortcut: 'L' },
-    { view: 'workqueue', Icon: ListChecks, shortcut: 'R' },
     { view: 'settings', Icon: Settings, shortcut: ',' },
   ]
+
+  const globalItems: { view: AppView; Icon: typeof LayoutDashboard; shortcut: string }[] = [
+    { view: 'workqueue', Icon: ListChecks, shortcut: 'R' },
+    { view: 'global_settings', Icon: Settings, shortcut: '' },
+  ]
+
+  function isActive(view: AppView): boolean {
+    return currentView === view
+  }
 </script>
 
 <div class="w-16 h-full bg-neutral flex flex-col items-center py-4 gap-5">
@@ -29,9 +37,9 @@
 
   <div class="w-9 h-px bg-neutral-content/20"></div>
 
-  {#each navItems as { view, Icon, shortcut }}
+  {#each projectItems as { view, Icon, shortcut }}
     <button
-      class="relative cursor-pointer {currentView === view ? 'text-primary' : 'text-neutral-content/40'}"
+      class="relative cursor-pointer {isActive(view) ? 'text-primary' : 'text-neutral-content/40'}"
       onclick={() => onNavigate(view)}
     >
       <Icon size={24} />
@@ -41,9 +49,24 @@
       {#if view === 'pr_review' && authoredPrCount > 0}
         <span class="badge badge-warning badge-xs absolute -bottom-2 -right-3 text-[0.6rem] font-bold min-w-4 h-4">{authoredPrCount}</span>
       {/if}
-      {#if $commandHeld && !modalsOpen}
+      {#if $commandHeld && !modalsOpen && shortcut}
         <kbd class="kbd kbd-xs absolute -bottom-2 -left-3 bg-neutral-content/10 text-neutral-content/60 border-neutral-content/20 text-[0.55rem] min-w-4 h-4 flex items-center justify-center pointer-events-none">{shortcut}</kbd>
       {/if}
     </button>
   {/each}
+
+  <div class="mt-auto flex flex-col items-center gap-5">
+    <div class="w-9 h-px bg-neutral-content/20"></div>
+    {#each globalItems as { view, Icon, shortcut }}
+      <button
+        class="relative cursor-pointer {isActive(view) ? 'text-primary' : 'text-neutral-content/40'}"
+        onclick={() => onNavigate(view)}
+      >
+        <Icon size={24} />
+        {#if $commandHeld && !modalsOpen && shortcut}
+          <kbd class="kbd kbd-xs absolute -bottom-2 -left-3 bg-neutral-content/10 text-neutral-content/60 border-neutral-content/20 text-[0.55rem] min-w-4 h-4 flex items-center justify-center pointer-events-none">{shortcut}</kbd>
+        {/if}
+      </button>
+    {/each}
+  </div>
 </div>
