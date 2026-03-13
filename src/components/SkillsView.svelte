@@ -1,24 +1,16 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { skills, selectedSkillName, activeProjectId, currentView, selectedTaskId } from '../lib/stores'
-  import { listOpenCodeSkills, createTask } from '../lib/ipc'
+  import { skills, selectedSkillName, activeProjectId } from '../lib/stores'
+  import { listOpenCodeSkills } from '../lib/ipc'
   import { pushNavState } from '../lib/navigation'
   import { isInputFocused } from '../lib/domUtils'
   import { useVimNavigation } from '../lib/useVimNavigation.svelte'
   import MarkdownContent from './MarkdownContent.svelte'
   import type { SkillInfo } from '../lib/types'
 
-  interface Props {
-    onRunAction: (data: { taskId: string; actionPrompt: string; agent: string | null }) => void
-  }
-
-  let { onRunAction }: Props = $props()
-
   let isLoading = $state(false)
   let error = $state<string | null>(null)
   let searchFilter = $state('')
-  let askPrompt = $state('')
-  let showAskInput = $state(false)
 
   let selectedSkill = $derived($skills.find(s => s.name === $selectedSkillName) || null)
 
@@ -89,76 +81,6 @@
   function selectSkill(skill: SkillInfo) {
     pushNavState()
     $selectedSkillName = skill.name
-    showAskInput = false
-    askPrompt = ''
-  }
-
-  async function handleEdit() {
-    if (!selectedSkill || !$activeProjectId) return
-    const initialPrompt = `Edit skill: ${selectedSkill.name}`
-    const task = await createTask(initialPrompt, 'backlog', null, $activeProjectId)
-    const prompt = `Edit the "${selectedSkill.name}" skill (${selectedSkill.level}-level).
-
-Current skill content:
-\`\`\`markdown
-${selectedSkill.template || '(no content)'}
-\`\`\`
-
-Please review this skill and improve it. Focus on making it clearer, more actionable, and better structured.`
-    onRunAction({ taskId: task.id, actionPrompt: prompt, agent: null })
-    pushNavState()
-    $currentView = 'board'
-    $selectedTaskId = task.id
-  }
-
-  async function handleCreate() {
-    if (!$activeProjectId) return
-    const initialPrompt = 'Create new skill'
-    const task = await createTask(initialPrompt, 'backlog', null, $activeProjectId)
-    const prompt = `Create a new OpenCode skill (SKILL.md file). 
-
-Use the "creating-skills" skill/guide if available. The skill should follow proper structure with:
-- Clear name and description
-- Progressive disclosure (overview → details)
-- Concrete workflows and examples
-- Proper frontmatter
-
-Ask me what the skill should be about, then create it.`
-    onRunAction({ taskId: task.id, actionPrompt: prompt, agent: null })
-    pushNavState()
-    $currentView = 'board'
-    $selectedTaskId = task.id
-  }
-
-  async function handleAsk() {
-    if (!selectedSkill || !$activeProjectId || !askPrompt.trim()) return
-    const initialPrompt = `Question about skill: ${selectedSkill.name}`
-    const task = await createTask(initialPrompt, 'backlog', null, $activeProjectId)
-    const prompt = `I have a question about the "${selectedSkill.name}" skill.
-
-Skill content:
-\`\`\`markdown
-${selectedSkill.template || '(no content)'}
-\`\`\`
-
-My question: ${askPrompt.trim()}`
-    onRunAction({ taskId: task.id, actionPrompt: prompt, agent: null })
-    askPrompt = ''
-    showAskInput = false
-    pushNavState()
-    $currentView = 'board'
-    $selectedTaskId = task.id
-  }
-
-  function handleAskKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      handleAsk()
-    }
-    if (e.key === 'Escape') {
-      showAskInput = false
-      askPrompt = ''
-    }
   }
 
   const vimSkills = useVimNavigation({
@@ -198,7 +120,6 @@ My question: ${askPrompt.trim()}`
       <span class="badge badge-primary badge-sm">{$skills.length} {$skills.length === 1 ? 'skill' : 'skills'}</span>
     </div>
     <div class="flex items-center gap-2">
-      <button class="btn btn-sm btn-primary" onclick={handleCreate}>+ New Skill</button>
       <button class="btn btn-sm border border-base-300" onclick={loadSkills} disabled={isLoading}>
         {isLoading ? '⟳' : '↻'} Refresh
       </button>
@@ -336,39 +257,7 @@ My question: ${askPrompt.trim()}`
             <span class="badge badge-sm {selectedSkill.level === 'project' ? 'badge-primary' : 'badge-secondary'} shrink-0">{selectedSkill.level === 'project' ? 'repository' : 'personal'}</span>
             <span class="text-xs text-base-content/40 shrink-0">{selectedSkill.source_dir}/skills</span>
           </div>
-          <div class="flex items-center gap-2 shrink-0">
-            <button
-              class="btn btn-ghost btn-sm text-base-content/70"
-              onclick={() => { showAskInput = !showAskInput; if (!showAskInput) askPrompt = '' }}
-              title="Ask a question about this skill"
-            >Ask</button>
-            <button
-              class="btn btn-ghost btn-sm text-base-content/70"
-              onclick={handleEdit}
-              title="Create a task to edit this skill"
-            >Edit</button>
-          </div>
         </div>
-
-        <!-- Ask input (collapsible) -->
-        {#if showAskInput}
-          <div class="px-6 py-3 border-b border-base-300 bg-base-200/50 shrink-0">
-            <div class="flex gap-2">
-              <input
-                type="text"
-                placeholder="Ask a question about this skill..."
-                class="input input-sm input-bordered flex-1"
-                bind:value={askPrompt}
-                onkeydown={handleAskKeydown}
-              />
-              <button
-                class="btn btn-sm btn-primary"
-                onclick={handleAsk}
-                disabled={!askPrompt.trim()}
-              >Send</button>
-            </div>
-          </div>
-        {/if}
 
         <!-- Description -->
         {#if selectedSkill.description}
@@ -398,8 +287,7 @@ My question: ${askPrompt.trim()}`
           {:else if !isLoading && !error}
             <span class="text-5xl">📝</span>
             <h3 class="text-lg font-semibold text-base-content/70 m-0">No skills yet</h3>
-            <p class="text-sm m-0">Create your first skill to get started.</p>
-            <button class="btn btn-primary btn-sm mt-2" onclick={handleCreate}>+ New Skill</button>
+            <p class="text-sm m-0">Add skills to your project or personal directories to see them here.</p>
           {/if}
         </div>
       {/if}
