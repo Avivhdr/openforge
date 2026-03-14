@@ -1,12 +1,15 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { writable } from 'svelte/store'
-import type { WorkQueueTask } from '../lib/types'
+import type { WorkQueueEntry, AgentSession, PullRequestInfo } from '../lib/types'
 
 vi.mock('../lib/stores', () => ({
   activeProjectId: writable<string | null>(null),
   currentView: writable('workqueue'),
   selectedTaskId: writable<string | null>(null),
+  activeSessions: writable<Map<string, AgentSession>>(new Map()),
+  ticketPrs: writable<Map<string, PullRequestInfo[]>>(new Map()),
+  startingTasks: writable<Set<string>>(new Set()),
 }))
 
 vi.mock('../lib/navigation', () => ({
@@ -17,6 +20,9 @@ vi.mock('../lib/ipc', () => ({
   getWorkQueueTasks: vi.fn().mockResolvedValue([]),
   getConfig: vi.fn().mockResolvedValue(null),
   setConfig: vi.fn().mockResolvedValue(undefined),
+  openUrl: vi.fn(),
+  updateTaskStatus: vi.fn().mockResolvedValue(undefined),
+  deleteTask: vi.fn().mockResolvedValue(undefined),
 }))
 
 import WorkQueueView from './WorkQueueView.svelte'
@@ -26,17 +32,39 @@ import { pushNavState } from '../lib/navigation'
 
 const now = Math.floor(Date.now() / 1000)
 
-function makeWorkQueueTask(overrides: Partial<WorkQueueTask> = {}): WorkQueueTask {
+function makeEntry(overrides: {
+  id?: string
+  initial_prompt?: string
+  status?: string
+  summary?: string | null
+  project_id?: string
+  project_name?: string
+  session_status?: string | null
+  session_checkpoint_data?: string | null
+  pull_requests?: WorkQueueEntry['pull_requests']
+} = {}): WorkQueueEntry {
   return {
-    id: 'T-1',
-    initial_prompt: 'Fix login bug',
-    status: 'doing',
-    summary: 'Updated auth flow to handle edge case',
-    project_id: 'proj-1',
-    project_name: 'Frontend App',
-    session_completed_at: now - 3600, // 1 hour ago
-    session_status: null,
-    ...overrides,
+    task: {
+      id: overrides.id ?? 'T-1',
+      initial_prompt: overrides.initial_prompt ?? 'Fix login bug',
+      status: overrides.status ?? 'doing',
+      summary: overrides.summary !== undefined ? overrides.summary : 'Updated auth flow to handle edge case',
+      jira_key: null,
+      jira_title: null,
+      jira_status: null,
+      jira_assignee: null,
+      jira_description: null,
+      prompt: null,
+      agent: null,
+      permission_mode: null,
+      project_id: overrides.project_id ?? 'proj-1',
+      created_at: now - 86400,
+      updated_at: now - 3600,
+    },
+    project_name: overrides.project_name ?? 'Frontend App',
+    session_status: overrides.session_status !== undefined ? overrides.session_status : null,
+    session_checkpoint_data: overrides.session_checkpoint_data !== undefined ? overrides.session_checkpoint_data : null,
+    pull_requests: overrides.pull_requests ?? [],
   }
 }
 
@@ -53,9 +81,9 @@ describe('WorkQueueView', () => {
 
   it('renders grouped tasks by project', async () => {
     vi.mocked(getWorkQueueTasks).mockResolvedValue([
-      makeWorkQueueTask({ id: 'T-1', project_name: 'Frontend App', project_id: 'proj-1' }),
-      makeWorkQueueTask({ id: 'T-2', project_name: 'Frontend App', project_id: 'proj-1', initial_prompt: 'Fix button' }),
-      makeWorkQueueTask({ id: 'T-3', project_name: 'Backend API', project_id: 'proj-2', initial_prompt: 'Add endpoint' }),
+      makeEntry({ id: 'T-1', project_name: 'Frontend App', project_id: 'proj-1' }),
+      makeEntry({ id: 'T-2', project_name: 'Frontend App', project_id: 'proj-1', initial_prompt: 'Fix button' }),
+      makeEntry({ id: 'T-3', project_name: 'Backend API', project_id: 'proj-2', initial_prompt: 'Add endpoint' }),
     ])
 
     render(WorkQueueView)
@@ -81,21 +109,9 @@ describe('WorkQueueView', () => {
     })
   })
 
-  it('shows relative time from session completion', async () => {
-    vi.mocked(getWorkQueueTasks).mockResolvedValue([
-      makeWorkQueueTask({ session_completed_at: now - 7200 }), // 2 hours ago
-    ])
-
-    render(WorkQueueView)
-
-    await waitFor(() => {
-      expect(screen.getByText('2h ago')).toBeTruthy()
-    })
-  })
-
   it('shows task summary when available', async () => {
     vi.mocked(getWorkQueueTasks).mockResolvedValue([
-      makeWorkQueueTask({ summary: 'Refactored the auth module' }),
+      makeEntry({ summary: 'Refactored the auth module' }),
     ])
 
     render(WorkQueueView)
@@ -103,39 +119,11 @@ describe('WorkQueueView', () => {
     await waitFor(() => {
       expect(screen.getByText('Refactored the auth module')).toBeTruthy()
     })
-    expect(screen.getByTestId('summary-container-T-1')).toBeTruthy()
-    expect(screen.queryByTestId('summary-popover-T-1')).toBeNull()
-  })
-
-  it('shows full summary in popover on hover over summary area', async () => {
-    const longSummary = 'This is a very long summary that should be visually truncated in the card but remain fully accessible via hover title tooltip text for easy reading'
-    vi.mocked(getWorkQueueTasks).mockResolvedValue([
-      makeWorkQueueTask({ summary: longSummary }),
-    ])
-
-    render(WorkQueueView)
-
-    await waitFor(() => {
-      expect(screen.getByTestId('summary-container-T-1')).toBeTruthy()
-    })
-
-    expect(screen.queryByTestId('summary-popover-T-1')).toBeNull()
-
-    const container = screen.getByTestId('summary-container-T-1')
-    await fireEvent.mouseEnter(container)
-    const openedPopover = screen.getByTestId('summary-popover-T-1')
-    expect(openedPopover).toBeTruthy()
-    expect(openedPopover.className).toContain('max-h-72')
-    expect(openedPopover.className).toContain('overflow-auto')
-    expect(openedPopover.className).toContain('bg-base-200')
-
-    await fireEvent.mouseLeave(container)
-    expect(screen.queryByTestId('summary-popover-T-1')).toBeNull()
   })
 
   it('handles null summary gracefully', async () => {
     vi.mocked(getWorkQueueTasks).mockResolvedValue([
-      makeWorkQueueTask({ summary: null }),
+      makeEntry({ summary: null }),
     ])
 
     render(WorkQueueView)
@@ -147,21 +135,9 @@ describe('WorkQueueView', () => {
     expect(screen.queryByText('null')).toBeNull()
   })
 
-  it('shows no session label when session_completed_at is null', async () => {
-    vi.mocked(getWorkQueueTasks).mockResolvedValue([
-      makeWorkQueueTask({ session_completed_at: null }),
-    ])
-
-    render(WorkQueueView)
-
-    await waitFor(() => {
-      expect(screen.getByText('no session')).toBeTruthy()
-    })
-  })
-
   it('shows session status badge when session_status is present', async () => {
     vi.mocked(getWorkQueueTasks).mockResolvedValue([
-      makeWorkQueueTask({ session_status: 'completed' }),
+      makeEntry({ session_status: 'completed' }),
     ])
 
     render(WorkQueueView)
@@ -170,9 +146,10 @@ describe('WorkQueueView', () => {
       expect(screen.getByText('Done')).toBeTruthy()
     })
   })
+
   it('does not show status badge when session_status is null', async () => {
     vi.mocked(getWorkQueueTasks).mockResolvedValue([
-      makeWorkQueueTask({ session_status: null }),
+      makeEntry({ session_status: null }),
     ])
 
     render(WorkQueueView)
@@ -189,7 +166,7 @@ describe('WorkQueueView', () => {
 
   it('navigates to project board on task click', async () => {
     vi.mocked(getWorkQueueTasks).mockResolvedValue([
-      makeWorkQueueTask({ id: 'T-5', project_id: 'proj-42', project_name: 'My Project' }),
+      makeEntry({ id: 'T-5', project_id: 'proj-42', project_name: 'My Project' }),
     ])
 
     render(WorkQueueView)
@@ -203,7 +180,6 @@ describe('WorkQueueView', () => {
     await fireEvent.click(taskCard!)
 
     expect(pushNavState).toHaveBeenCalled()
-    expect(vi.mocked(activeProjectId)).toBeDefined()
     // Verify stores were updated — read current values
     const { get } = await import('svelte/store')
     expect(get(activeProjectId)).toBe('proj-42')
@@ -230,7 +206,7 @@ describe('WorkQueueView', () => {
 
   it('re-fetches when refreshTrigger changes', async () => {
     vi.mocked(getWorkQueueTasks).mockResolvedValue([
-      makeWorkQueueTask({ id: 'T-1' }),
+      makeEntry({ id: 'T-1' }),
     ])
 
     const { rerender } = render(WorkQueueView, { props: { refreshTrigger: 0 } })
@@ -240,8 +216,8 @@ describe('WorkQueueView', () => {
     })
 
     vi.mocked(getWorkQueueTasks).mockResolvedValue([
-      makeWorkQueueTask({ id: 'T-1' }),
-      makeWorkQueueTask({ id: 'T-2', initial_prompt: 'New task' }),
+      makeEntry({ id: 'T-1' }),
+      makeEntry({ id: 'T-2', initial_prompt: 'New task' }),
     ])
 
     await rerender({ refreshTrigger: 1 })
@@ -258,8 +234,8 @@ describe('WorkQueueView', () => {
         return null
       })
       vi.mocked(getWorkQueueTasks).mockResolvedValue([
-        makeWorkQueueTask({ id: 'T-1', project_name: 'Frontend App', project_id: 'proj-1' }),
-        makeWorkQueueTask({ id: 'T-2', project_name: 'Backend API', project_id: 'proj-2', initial_prompt: 'Add endpoint' }),
+        makeEntry({ id: 'T-1', project_name: 'Frontend App', project_id: 'proj-1' }),
+        makeEntry({ id: 'T-2', project_name: 'Backend API', project_id: 'proj-2', initial_prompt: 'Add endpoint' }),
       ])
 
       render(WorkQueueView)
@@ -277,8 +253,8 @@ describe('WorkQueueView', () => {
 
     it('renders columns with reorder arrow buttons', async () => {
       vi.mocked(getWorkQueueTasks).mockResolvedValue([
-        makeWorkQueueTask({ id: 'T-1', project_name: 'Frontend App', project_id: 'proj-1' }),
-        makeWorkQueueTask({ id: 'T-2', project_name: 'Backend API', project_id: 'proj-2', initial_prompt: 'Add endpoint' }),
+        makeEntry({ id: 'T-1', project_name: 'Frontend App', project_id: 'proj-1' }),
+        makeEntry({ id: 'T-2', project_name: 'Backend API', project_id: 'proj-2', initial_prompt: 'Add endpoint' }),
       ])
 
       render(WorkQueueView)
@@ -303,9 +279,9 @@ describe('WorkQueueView', () => {
 
     it('persists new column order after clicking move-right arrow', async () => {
       vi.mocked(getWorkQueueTasks).mockResolvedValue([
-        makeWorkQueueTask({ id: 'T-1', project_name: 'Frontend App', project_id: 'proj-1' }),
-        makeWorkQueueTask({ id: 'T-2', project_name: 'Backend API', project_id: 'proj-2', initial_prompt: 'Add endpoint' }),
-        makeWorkQueueTask({ id: 'T-3', project_name: 'Mobile App', project_id: 'proj-3', initial_prompt: 'Fix crash' }),
+        makeEntry({ id: 'T-1', project_name: 'Frontend App', project_id: 'proj-1' }),
+        makeEntry({ id: 'T-2', project_name: 'Backend API', project_id: 'proj-2', initial_prompt: 'Add endpoint' }),
+        makeEntry({ id: 'T-3', project_name: 'Mobile App', project_id: 'proj-3', initial_prompt: 'Fix crash' }),
       ])
 
       render(WorkQueueView)
@@ -336,8 +312,8 @@ describe('WorkQueueView', () => {
         return null
       })
       vi.mocked(getWorkQueueTasks).mockResolvedValue([
-        makeWorkQueueTask({ id: 'T-1', project_name: 'Frontend App', project_id: 'proj-1' }),
-        makeWorkQueueTask({ id: 'T-2', project_name: 'Backend API', project_id: 'proj-2', initial_prompt: 'Add endpoint' }),
+        makeEntry({ id: 'T-1', project_name: 'Frontend App', project_id: 'proj-1' }),
+        makeEntry({ id: 'T-2', project_name: 'Backend API', project_id: 'proj-2', initial_prompt: 'Add endpoint' }),
       ])
 
       render(WorkQueueView)
@@ -357,7 +333,7 @@ describe('WorkQueueView', () => {
   describe('task pinning', () => {
     it('shows pin button on task card hover and hides it by default when unpinned', async () => {
       vi.mocked(getWorkQueueTasks).mockResolvedValue([
-        makeWorkQueueTask({ id: 'T-1' }),
+        makeEntry({ id: 'T-1' }),
       ])
 
       render(WorkQueueView)
@@ -373,8 +349,8 @@ describe('WorkQueueView', () => {
 
     it('pins a task when pin button is clicked', async () => {
       vi.mocked(getWorkQueueTasks).mockResolvedValue([
-        makeWorkQueueTask({ id: 'T-1' }),
-        makeWorkQueueTask({ id: 'T-2', initial_prompt: 'Second task' }),
+        makeEntry({ id: 'T-1' }),
+        makeEntry({ id: 'T-2', initial_prompt: 'Second task' }),
       ])
 
       render(WorkQueueView)
@@ -406,7 +382,7 @@ describe('WorkQueueView', () => {
         return null
       })
       vi.mocked(getWorkQueueTasks).mockResolvedValue([
-        makeWorkQueueTask({ id: 'T-1' }),
+        makeEntry({ id: 'T-1' }),
       ])
 
       render(WorkQueueView)
@@ -437,9 +413,9 @@ describe('WorkQueueView', () => {
         return null
       })
       vi.mocked(getWorkQueueTasks).mockResolvedValue([
-        makeWorkQueueTask({ id: 'T-1', project_name: 'Frontend App', project_id: 'proj-1' }),
-        makeWorkQueueTask({ id: 'T-2', project_name: 'Frontend App', project_id: 'proj-1', initial_prompt: 'Second' }),
-        makeWorkQueueTask({ id: 'T-3', project_name: 'Frontend App', project_id: 'proj-1', initial_prompt: 'Third (pinned)' }),
+        makeEntry({ id: 'T-1', project_name: 'Frontend App', project_id: 'proj-1' }),
+        makeEntry({ id: 'T-2', project_name: 'Frontend App', project_id: 'proj-1', initial_prompt: 'Second' }),
+        makeEntry({ id: 'T-3', project_name: 'Frontend App', project_id: 'proj-1', initial_prompt: 'Third (pinned)' }),
       ])
 
       render(WorkQueueView)
@@ -463,7 +439,7 @@ describe('WorkQueueView', () => {
         return null
       })
       vi.mocked(getWorkQueueTasks).mockResolvedValue([
-        makeWorkQueueTask({ id: 'T-1' }),
+        makeEntry({ id: 'T-1' }),
       ])
 
       render(WorkQueueView)
@@ -479,7 +455,7 @@ describe('WorkQueueView', () => {
 
     it('pin click does not navigate to the task', async () => {
       vi.mocked(getWorkQueueTasks).mockResolvedValue([
-        makeWorkQueueTask({ id: 'T-1' }),
+        makeEntry({ id: 'T-1' }),
       ])
 
       render(WorkQueueView)

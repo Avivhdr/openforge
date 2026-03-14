@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Pin } from 'lucide-svelte'
   import type { Task, AgentSession, PullRequestInfo } from '../lib/types'
   import { isReadyToMerge } from '../lib/types'
   import { openUrl } from '../lib/ipc'
@@ -10,10 +11,12 @@
     session?: AgentSession | null
     pullRequests?: PullRequestInfo[]
     isStarting?: boolean
+    isPinned?: boolean
+    onTogglePin?: (taskId: string, e: MouseEvent | KeyboardEvent) => void
     onSelect?: (taskId: string) => void
   }
 
-  let { task, session = null, pullRequests = [], isStarting = false, onSelect }: Props = $props()
+  let { task, session = null, pullRequests = [], isStarting = false, isPinned = false, onTogglePin, onSelect }: Props = $props()
 
   function handleClick() {
     onSelect?.(task.id)
@@ -41,7 +44,7 @@
 </script>
 
 <Card
-  class="block px-3.5 py-3 {hasCiFailure && !hasPendingCi && statusClass !== 'running' && !needsInput ? 'ci-failed' : ''} {isStarting ? 'starting' : ''} {statusClass === 'running' ? 'running' : ''} {statusClass === 'paused' && !needsInput ? 'paused' : ''} {statusClass === 'failed' ? 'failed' : ''} {statusClass === 'interrupted' ? 'interrupted' : ''} {statusClass === 'completed' ? 'completed' : ''} {needsInput ? 'needs-input' : ''} {hasReadyToMerge && statusClass !== 'running' ? 'ready-to-merge' : ''} {hasPendingCi && statusClass !== 'running' && !needsInput && !hasCiFailure ? 'ci-running' : ''} {hasReviewPending && statusClass !== 'running' && !needsInput && !hasCiFailure && !hasPendingCi ? 'review-pending' : ''}"
+  class="group/card block px-3.5 py-3 {hasCiFailure && !hasPendingCi && statusClass !== 'running' && !needsInput ? 'ci-failed' : ''} {isStarting ? 'starting' : ''} {statusClass === 'running' ? 'running' : ''} {statusClass === 'paused' && !needsInput ? 'paused' : ''} {statusClass === 'failed' ? 'failed' : ''} {statusClass === 'interrupted' ? 'interrupted' : ''} {statusClass === 'completed' ? 'completed' : ''} {needsInput ? 'needs-input' : ''} {hasReadyToMerge && statusClass !== 'running' ? 'ready-to-merge' : ''} {hasPendingCi && statusClass !== 'running' && !needsInput && !hasCiFailure ? 'ci-running' : ''} {hasReviewPending && statusClass !== 'running' && !needsInput && !hasCiFailure && !hasPendingCi ? 'review-pending' : ''} {isPinned ? 'border-primary/30' : ''}"
   onclick={handleClick}
 >
   <div class="flex items-center justify-between mb-1">
@@ -55,6 +58,24 @@
       {/if}
     </div>
     <div class="flex items-center gap-1.5">
+      {#if onTogglePin}
+        <button
+          type="button"
+          class="shrink-0 transition-opacity {isPinned ? 'text-primary opacity-100' : 'text-base-content/40 hover:text-base-content/70 opacity-0 group-hover/card:opacity-100'}"
+          aria-label={isPinned ? 'Unpin task' : 'Pin task'}
+          data-testid={`pin-btn-${task.id}`}
+          onclick={(e: MouseEvent) => { e.stopPropagation(); onTogglePin(task.id, e) }}
+          onkeydown={(e: KeyboardEvent) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              e.stopPropagation()
+              onTogglePin(task.id, e)
+            }
+          }}
+        >
+          <Pin size={12} aria-hidden="true" class={isPinned ? 'fill-primary' : ''} />
+        </button>
+      {/if}
       {#if isStarting}
         <span
           class="font-mono text-[0.6rem] font-semibold px-1.5 py-0.5 rounded uppercase tracking-wider whitespace-nowrap leading-tight bg-primary/15 text-primary"

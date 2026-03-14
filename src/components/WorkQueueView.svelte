@@ -1,67 +1,68 @@
 <script lang="ts">
-  import { ChevronLeft, ChevronRight, Eye, Pin } from 'lucide-svelte'
-  import type { WorkQueueTask } from '../lib/types'
+  import { ChevronLeft, ChevronRight } from 'lucide-svelte'
+  import type { WorkQueueEntry } from '../lib/types'
+  import type { AgentSession } from '../lib/types'
   import { getWorkQueueTasks, getConfig, setConfig } from '../lib/ipc'
-  import { activeProjectId, currentView, selectedTaskId } from '../lib/stores'
+  import { activeProjectId, currentView, selectedTaskId, activeSessions, ticketPrs, startingTasks } from '../lib/stores'
   import { pushNavState } from '../lib/navigation'
   import { isInputFocused } from '../lib/domUtils'
   import { useVimNavigation } from '../lib/useVimNavigation.svelte'
-  import { timeAgoFromSeconds } from '../lib/timeAgo'
-  import Card from './Card.svelte'
+  import TaskCard from './TaskCard.svelte'
+  import TaskContextMenu from './TaskContextMenu.svelte'
 
   interface Props {
     refreshTrigger?: number
+    onRunAction?: (data: { taskId: string; actionPrompt: string; agent: string | null }) => void
   }
 
-  let { refreshTrigger = 0 }: Props = $props()
+  let { refreshTrigger = 0, onRunAction }: Props = $props()
 
-  let tasks = $state<WorkQueueTask[]>([])
+  let entries = $state<WorkQueueEntry[]>([])
   let loading = $state(true)
-  let hoveredSummaryTaskId = $state<string | null>(null)
   let columnOrder = $state<string[]>([])
   let pinnedTaskIds = $state<Set<string>>(new Set())
 
-  let grouped = $derived(groupByProject(tasks))
+  let grouped = $derived(groupByProject(entries))
   let sortedColumns = $derived(sortColumns(grouped, columnOrder))
 
-  function groupByProject(items: WorkQueueTask[]): Map<string, WorkQueueTask[]> {
-    const map = new Map<string, WorkQueueTask[]>()
-    for (const task of items) {
-      const existing = map.get(task.project_name)
+  function groupByProject(items: WorkQueueEntry[]): Map<string, WorkQueueEntry[]> {
+    const map = new Map<string, WorkQueueEntry[]>()
+    for (const entry of items) {
+      const existing = map.get(entry.project_name)
       if (existing) {
-        existing.push(task)
+        existing.push(entry)
       } else {
-        map.set(task.project_name, [task])
+        map.set(entry.project_name, [entry])
       }
     }
     return map
   }
 
-  function sortColumns(groups: Map<string, WorkQueueTask[]>, order: string[]): [string, WorkQueueTask[]][] {
+  function sortColumns(groups: Map<string, WorkQueueEntry[]>, order: string[]): [string, WorkQueueEntry[]][] {
     const projectNames = [...groups.keys()]
-    const sorted: [string, WorkQueueTask[]][] = []
+    const sorted: [string, WorkQueueEntry[]][] = []
 
     // First, add projects that are in the saved order
     for (const name of order) {
       if (groups.has(name)) {
-        sorted.push([name, sortTasksWithPins(groups.get(name)!)])
+        sorted.push([name, sortEntriesWithPins(groups.get(name)!)])
       }
     }
 
     // Then, add any new projects not in saved order (appended at end)
     for (const name of projectNames) {
       if (!order.includes(name)) {
-        sorted.push([name, sortTasksWithPins(groups.get(name)!)])
+        sorted.push([name, sortEntriesWithPins(groups.get(name)!)])
       }
     }
 
     return sorted
   }
 
-  function sortTasksWithPins(items: WorkQueueTask[]): WorkQueueTask[] {
+  function sortEntriesWithPins(items: WorkQueueEntry[]): WorkQueueEntry[] {
     return [...items].sort((a, b) => {
-      const aPinned = pinnedTaskIds.has(a.id)
-      const bPinned = pinnedTaskIds.has(b.id)
+      const aPinned = pinnedTaskIds.has(a.task.id)
+      const bPinned = pinnedTaskIds.has(b.task.id)
       if (aPinned && !bPinned) return -1
       if (!aPinned && bPinned) return 1
       return 0
@@ -71,12 +72,12 @@
   async function loadTasks() {
     loading = true
     try {
-      const [fetchedTasks, savedOrder, savedPins] = await Promise.all([
+      const [fetchedEntries, savedOrder, savedPins] = await Promise.all([
         getWorkQueueTasks(),
         getConfig('workqueue_column_order'),
         getConfig('workqueue_pinned_tasks'),
       ])
-      tasks = fetchedTasks
+      entries = fetchedEntries
       if (savedOrder) {
         try { columnOrder = JSON.parse(savedOrder) } catch { columnOrder = [] }
       }
@@ -85,47 +86,22 @@
       }
     } catch (e) {
       console.error('Failed to load work queue tasks:', e)
-      tasks = []
+      entries = []
     } finally {
       loading = false
     }
   }
 
-  function statusLabel(s: string): string {
-    switch (s) {
-      case 'running': return 'Running'
-      case 'completed': return 'Done'
-      case 'paused': return 'Paused'
-      case 'failed': return 'Error'
-      case 'interrupted': return 'Stopped'
-      default: return s
-    }
-  }
-
-  function statusStyle(s: string): string {
-    switch (s) {
-      case 'running': return 'bg-success/15 text-success'
-      case 'completed': return 'bg-info/20 text-info'
-      case 'paused': return 'bg-warning/15 text-warning'
-      case 'failed': return 'bg-error/15 text-error'
-      case 'interrupted': return 'bg-base-content/15 text-base-content/50'
-      default: return 'bg-base-content/15 text-base-content/50'
-    }
-  }
-
-  function handleTaskClick(task: WorkQueueTask) {
+  function handleTaskClick(entry: WorkQueueEntry) {
     pushNavState()
-    $activeProjectId = task.project_id
+    $activeProjectId = entry.task.project_id
     $currentView = 'board'
-    $selectedTaskId = task.id
+    $selectedTaskId = entry.task.id
   }
 
-  function showSummary(taskId: string) {
-    hoveredSummaryTaskId = taskId
-  }
-
-  function hideSummary() {
-    hoveredSummaryTaskId = null
+  function handleSelect(taskId: string) {
+    const entry = entries.find(e => e.task.id === taskId)
+    if (entry) handleTaskClick(entry)
   }
 
   function togglePin(taskId: string, e: MouseEvent | KeyboardEvent) {
@@ -140,6 +116,33 @@
     setConfig('workqueue_pinned_tasks', JSON.stringify([...next])).catch((err) =>
       console.error('Failed to save pinned tasks:', err)
     )
+  }
+
+  function getSession(entry: WorkQueueEntry): AgentSession | null {
+    // Prefer live session from store (updated via Tauri events) over static backend data
+    const liveSession = $activeSessions.get(entry.task.id)
+    if (liveSession) return liveSession
+    if (!entry.session_status) return null
+    return {
+      id: '',
+      ticket_id: entry.task.id,
+      opencode_session_id: null,
+      stage: '',
+      status: entry.session_status,
+      checkpoint_data: entry.session_checkpoint_data,
+      error_message: null,
+      created_at: 0,
+      updated_at: 0,
+      provider: '',
+      claude_session_id: null,
+    }
+  }
+
+  function getPullRequests(entry: WorkQueueEntry) {
+    // Prefer live PR data from store (updated via Tauri events) over static backend data
+    const livePrs = $ticketPrs.get(entry.task.id)
+    if (livePrs && livePrs.length > 0) return livePrs
+    return entry.pull_requests
   }
 
   function moveColumn(projectName: string, direction: -1 | 1) {
@@ -158,18 +161,30 @@
     )
   }
 
+  // Context menu
+  let contextMenu = $state({ visible: false, x: 0, y: 0, taskId: '' })
+
+  function handleContextMenu(event: MouseEvent, taskId: string) {
+    event.preventDefault()
+    contextMenu = { visible: true, x: event.clientX, y: event.clientY, taskId }
+  }
+
+  function closeContextMenu() {
+    contextMenu = { ...contextMenu, visible: false }
+  }
+
   // Vim navigation — column-based
   let focusedCol = $state(0)
 
-  function currentColTasks(): WorkQueueTask[] {
+  function currentColEntries(): WorkQueueEntry[] {
     return sortedColumns[focusedCol]?.[1] ?? []
   }
 
   const vimWq = useVimNavigation({
-    getItemCount: () => currentColTasks().length,
+    getItemCount: () => currentColEntries().length,
     onSelect: (index) => {
-      const task = currentColTasks()[index]
-      if (task) handleTaskClick(task)
+      const entry = currentColEntries()[index]
+      if (entry) handleTaskClick(entry)
     },
     onLeft: () => {
       if (focusedCol > 0) {
@@ -227,14 +242,14 @@
   <div class="flex-1 overflow-hidden flex items-center justify-center">
     <span class="text-base-content/50">Loading...</span>
   </div>
-{:else if tasks.length === 0}
+{:else if entries.length === 0}
   <div class="flex-1 overflow-hidden flex items-center justify-center">
     <span class="text-base-content/50">No tasks waiting for review</span>
   </div>
 {:else}
   <div class="flex-1 overflow-auto p-6">
     <div class="flex gap-6 items-start">
-      {#each sortedColumns as [projectName, projectTasks]}
+      {#each sortedColumns as [projectName, projectEntries]}
         <div
           class="min-w-[340px] max-w-[400px] rounded-lg"
           data-testid={`workqueue-column-${projectName}`}
@@ -269,72 +284,19 @@
             </button>
           </div>
           <div class="flex flex-col gap-2">
-            {#each projectTasks as task, i}
-              {@const isPinned = pinnedTaskIds.has(task.id)}
+            {#each projectEntries as entry, i}
               {@const colIdx = sortedColumns.findIndex(([n]) => n === projectName)}
               {@const isVimFocused = colIdx === focusedCol && vimWq.focusedIndex === i}
-              <div data-testid={`task-card-${task.id}`} data-vim-wq-item class={isVimFocused ? 'vim-focus' : ''}>
-                <Card onclick={() => handleTaskClick(task)} class="group/card block px-3.5 py-3 {isPinned ? 'border-primary/30' : ''}">
-                  <div class="flex items-center justify-between mb-1">
-                    <div class="flex items-center gap-1.5">
-                      <span class="font-mono text-xs font-semibold text-primary">{task.id}</span>
-                      {#if task.session_status}
-                        <span
-                          class="font-mono text-[0.6rem] font-semibold px-1.5 py-0.5 rounded uppercase tracking-wider whitespace-nowrap leading-tight {statusStyle(task.session_status)}"
-                        >{statusLabel(task.session_status)}</span>
-                      {/if}
-                    </div>
-                    <div class="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        class="shrink-0 transition-opacity {isPinned ? 'text-primary opacity-100' : 'text-base-content/40 hover:text-base-content/70 opacity-0 group-hover/card:opacity-100'}"
-                        aria-label={isPinned ? 'Unpin task' : 'Pin task'}
-                        data-testid={`pin-btn-${task.id}`}
-                        onclick={(e: MouseEvent) => togglePin(task.id, e)}
-                        onkeydown={(e: KeyboardEvent) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault()
-                            togglePin(task.id, e)
-                          }
-                        }}
-                      >
-                        <Pin size={12} aria-hidden="true" class={isPinned ? 'fill-primary' : ''} />
-                      </button>
-                      <span class="font-mono text-[0.6rem] text-base-content/40">{task.session_completed_at ? timeAgoFromSeconds(task.session_completed_at) : 'no session'}</span>
-                    </div>
-                  </div>
-                  <div class="font-mono text-sm font-medium leading-relaxed text-base-content mb-1">
-                    {task.initial_prompt.length > 80 ? task.initial_prompt.slice(0, 80) + '...' : task.initial_prompt}
-                  </div>
-                  {#if task.summary}
-                    <div
-                      class="relative w-full"
-                      data-testid={`summary-container-${task.id}`}
-                      onmouseenter={() => showSummary(task.id)}
-                      onmouseleave={() => hideSummary()}
-                    >
-                      <div class="flex items-center gap-1.5 min-w-0 text-xs text-base-content/50">
-                        <span class="truncate">{task.summary}</span>
-                        <span
-                          class="shrink-0 text-base-content/40 hover:text-base-content/70 cursor-default"
-                          aria-label="Show full summary"
-                          role="img"
-                        >
-                          <Eye size={12} aria-hidden="true" />
-                        </span>
-                      </div>
-                      {#if hoveredSummaryTaskId === task.id}
-                        <div
-                          class="absolute left-0 top-full z-30 w-[32rem] max-w-[min(36rem,calc(100vw-4rem))] max-h-72 overflow-auto rounded border border-base-300 bg-base-200 p-4 text-sm leading-relaxed text-base-content shadow-lg whitespace-pre-wrap break-words"
-                          data-testid={`summary-popover-${task.id}`}
-                          role="tooltip"
-                        >
-                          {task.summary}
-                        </div>
-                      {/if}
-                    </div>
-                  {/if}
-                </Card>
+              <div data-testid={`task-card-${entry.task.id}`} data-vim-wq-item class={isVimFocused ? 'vim-focus' : ''} oncontextmenu={(e: MouseEvent) => handleContextMenu(e, entry.task.id)}>
+                <TaskCard
+                  task={entry.task}
+                  session={getSession(entry)}
+                  pullRequests={getPullRequests(entry)}
+                  isStarting={$startingTasks.has(entry.task.id)}
+                  isPinned={pinnedTaskIds.has(entry.task.id)}
+                  onTogglePin={togglePin}
+                  onSelect={handleSelect}
+                />
               </div>
             {/each}
           </div>
@@ -343,3 +305,13 @@
     </div>
   </div>
 {/if}
+
+<TaskContextMenu
+  visible={contextMenu.visible}
+  x={contextMenu.x}
+  y={contextMenu.y}
+  taskId={contextMenu.taskId}
+  onClose={closeContextMenu}
+  onStart={(taskId) => onRunAction?.({ taskId, actionPrompt: '', agent: null })}
+  onDelete={(taskId) => { if ($selectedTaskId === taskId) $selectedTaskId = null }}
+/>

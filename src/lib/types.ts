@@ -338,15 +338,12 @@ export interface AgentReviewComment {
 /** App-level view for top-bar navigation */
 export type AppView = "board" | "pr_review" | "skills" | "settings" | "workqueue";
 
-export interface WorkQueueTask {
-  id: string;
-  initial_prompt: string;
-  status: string;
-  summary: string | null;
-  project_id: string;
+export interface WorkQueueEntry {
+  task: Task;
   project_name: string;
-  session_completed_at: number | null;
   session_status: string | null;
+  session_checkpoint_data: string | null;
+  pull_requests: PullRequestInfo[];
 }
 
 export interface PtySpawnRequest {

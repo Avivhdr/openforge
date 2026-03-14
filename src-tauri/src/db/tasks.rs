@@ -23,14 +23,11 @@ pub struct TaskRow {
 
 #[derive(Debug, Serialize, Clone)]
 pub struct WorkQueueTaskRow {
-    pub id: String,
-    pub initial_prompt: String,
-    pub status: String,
-    pub summary: Option<String>,
-    pub project_id: String,
+    pub task: TaskRow,
     pub project_name: String,
-    pub session_completed_at: Option<i64>,
     pub session_status: Option<String>,
+    pub session_checkpoint_data: Option<String>,
+    pub pull_requests: Vec<super::PrRow>,
 }
 
 impl super::Database {
@@ -71,17 +68,17 @@ impl super::Database {
 
     pub fn get_work_queue_tasks(&self) -> std::result::Result<Vec<WorkQueueTaskRow>, String> {
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn
+
+        // Step 1: Fetch tasks with their latest session info
+        let mut task_stmt = conn
             .prepare(
                 "SELECT
-                    t.id,
-                    t.initial_prompt,
-                    t.status,
-                    t.summary,
-                    t.project_id,
+                    t.id, t.initial_prompt, t.status, t.jira_key, t.jira_title,
+                    t.jira_status, t.jira_assignee, t.project_id, t.created_at, t.updated_at,
+                    t.jira_description, t.prompt, t.summary, t.agent, t.permission_mode,
                     p.name,
-                    ls.updated_at,
-                    ls.status
+                    ls.status,
+                    ls.checkpoint_data
                 FROM tasks t
                 JOIN projects p ON p.id = t.project_id
                 LEFT JOIN (
@@ -95,25 +92,92 @@ impl super::Database {
             )
             .map_err(|e| format!("Failed to prepare get_work_queue_tasks query: {e}"))?;
 
-        let rows = stmt
+        let task_rows: Vec<(TaskRow, String, Option<String>, Option<String>)> = task_stmt
             .query_map([], |row| {
-                Ok(WorkQueueTaskRow {
-                    id: row.get(0)?,
-                    initial_prompt: row.get(1)?,
-                    status: row.get(2)?,
-                    summary: row.get(3)?,
-                    project_id: row.get(4)?,
-                    project_name: row.get(5)?,
-                    session_completed_at: row.get(6)?,
-                    session_status: row.get(7)?,
-                })
+                Ok((
+                    TaskRow {
+                        id: row.get(0)?,
+                        initial_prompt: row.get(1)?,
+                        status: row.get(2)?,
+                        jira_key: row.get(3)?,
+                        jira_title: row.get(4)?,
+                        jira_status: row.get(5)?,
+                        jira_assignee: row.get(6)?,
+                        project_id: row.get(7)?,
+                        created_at: row.get(8)?,
+                        updated_at: row.get(9)?,
+                        jira_description: row.get(10)?,
+                        prompt: row.get(11)?,
+                        summary: row.get(12)?,
+                        agent: row.get(13)?,
+                        permission_mode: row.get(14)?,
+                    },
+                    row.get::<_, String>(15)?,         // project_name
+                    row.get::<_, Option<String>>(16)?,  // session_status
+                    row.get::<_, Option<String>>(17)?,  // session_checkpoint_data
+                ))
             })
-            .map_err(|e| format!("Failed to execute get_work_queue_tasks query: {e}"))?;
+            .map_err(|e| format!("Failed to execute get_work_queue_tasks query: {e}"))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| format!("Failed to map work queue task rows: {e}"))?;
 
-        let mut result = Vec::new();
-        for row in rows {
-            result.push(row.map_err(|e| format!("Failed to map work queue task row: {e}"))?);
+        if task_rows.is_empty() {
+            return Ok(Vec::new());
         }
+
+        // Step 2: Fetch PRs for all work queue task IDs
+        let task_ids: Vec<&str> = task_rows.iter().map(|(t, _, _, _)| t.id.as_str()).collect();
+        let placeholders: Vec<String> = task_ids.iter().enumerate().map(|(i, _)| format!("?{}", i + 1)).collect();
+        let pr_sql = format!(
+            "SELECT id, ticket_id, repo_owner, repo_name, title, url, state, head_sha, ci_status, ci_check_runs, review_status, merged_at, created_at, updated_at, draft,
+                    (SELECT COUNT(*) FROM pr_comments WHERE pr_id = pull_requests.id AND addressed = 0) as unaddressed_comment_count
+             FROM pull_requests
+             WHERE ticket_id IN ({})
+             ORDER BY updated_at DESC",
+            placeholders.join(", ")
+        );
+        let mut pr_stmt = conn.prepare(&pr_sql)
+            .map_err(|e| format!("Failed to prepare work queue PRs query: {e}"))?;
+        let params: Vec<Box<dyn rusqlite::types::ToSql>> = task_ids.iter().map(|id| Box::new(id.to_string()) as Box<dyn rusqlite::types::ToSql>).collect();
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+        let pr_rows = pr_stmt.query_map(param_refs.as_slice(), |row| {
+            Ok(super::PrRow {
+                id: row.get(0)?,
+                ticket_id: row.get(1)?,
+                repo_owner: row.get(2)?,
+                repo_name: row.get(3)?,
+                title: row.get(4)?,
+                url: row.get(5)?,
+                state: row.get(6)?,
+                head_sha: row.get(7)?,
+                ci_status: row.get(8)?,
+                ci_check_runs: row.get(9)?,
+                review_status: row.get(10)?,
+                merged_at: row.get(11)?,
+                created_at: row.get(12)?,
+                updated_at: row.get(13)?,
+                draft: row.get(14)?,
+                unaddressed_comment_count: row.get(15)?,
+            })
+        }).map_err(|e| format!("Failed to execute work queue PRs query: {e}"))?;
+
+        let mut pr_map: std::collections::HashMap<String, Vec<super::PrRow>> = std::collections::HashMap::new();
+        for pr in pr_rows {
+            let pr = pr.map_err(|e| format!("Failed to map PR row: {e}"))?;
+            pr_map.entry(pr.ticket_id.clone()).or_default().push(pr);
+        }
+
+        // Step 3: Combine task and PR data
+        let result = task_rows.into_iter().map(|(task, project_name, session_status, session_checkpoint_data)| {
+            let prs = pr_map.remove(&task.id).unwrap_or_default();
+            WorkQueueTaskRow {
+                task,
+                project_name,
+                session_status,
+                session_checkpoint_data,
+                pull_requests: prs,
+            }
+        }).collect();
 
         Ok(result)
     }
@@ -930,9 +994,8 @@ mod tests {
 
         let rows = db.get_work_queue_tasks().expect("query failed");
         assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].id, "T-1");
+        assert_eq!(rows[0].task.id, "T-1");
         assert_eq!(rows[0].project_name, "Project One");
-        assert_eq!(rows[0].session_completed_at, Some(1200));
         assert_eq!(rows[0].session_status, Some("completed".to_string()));
 
         drop(db);
@@ -1066,8 +1129,7 @@ mod tests {
 
         let rows = db.get_work_queue_tasks().expect("query failed");
         assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].id, "T-1");
-        assert_eq!(rows[0].session_completed_at, Some(2200));
+        assert_eq!(rows[0].task.id, "T-1");
         assert_eq!(rows[0].session_status, Some("completed".to_string()));
 
         drop(db);
@@ -1096,8 +1158,7 @@ mod tests {
 
         let rows = db.get_work_queue_tasks().expect("query failed");
         assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].id, "T-1");
-        assert_eq!(rows[0].session_completed_at, None);
+        assert_eq!(rows[0].task.id, "T-1");
         assert_eq!(rows[0].session_status, None);
 
         drop(db);
