@@ -384,6 +384,13 @@
         triggerGithubSync()
         break
       default:
+        if (actionId.startsWith('custom-action-') && task) {
+          const realId = actionId.replace('custom-action-', '')
+          const action = actionPaletteActions.find(a => a.id === realId)
+          if (action) {
+            await handleRunAction({ taskId: task.id, actionPrompt: action.prompt, agent: null })
+          }
+        }
         break
     }
   }
