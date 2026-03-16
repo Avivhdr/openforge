@@ -62,6 +62,10 @@ export async function getProjectAttention(): Promise<ProjectAttention[]> {
   return invoke<ProjectAttention[]>("get_project_attention");
 }
 
+export async function reorderProjects(projectIds: string[]): Promise<void> {
+  return invoke("reorder_projects", { projectIds });
+}
+
 export async function getProjectConfig(projectId: string, key: string): Promise<string | null> {
   return invoke<string | null>("get_project_config", { projectId, key });
 }

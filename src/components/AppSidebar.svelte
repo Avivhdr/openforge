@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { projects, activeProjectId, projectAttention } from '../lib/stores'
-  import { getProjectAttention } from '../lib/ipc'
+  import { getProjectAttention, reorderProjects } from '../lib/ipc'
   import { ChevronLeft, ChevronRight, ListChecks, Settings, Plus } from 'lucide-svelte'
   import type { ProjectAttention, AppView } from '../lib/types'
 
@@ -15,6 +15,9 @@
   }
 
   let { collapsed, currentView, appMode, onToggleCollapse, onNewProject, onNavigate }: Props = $props()
+
+  let draggedProjectId: string | null = $state(null)
+  let dropTargetId: string | null = $state(null)
 
   onMount(async () => {
     try {
@@ -55,6 +58,56 @@
       return { dot: 'bg-error', text: `${attention.ci_failures} CI failures`, color: 'text-error' }
     }
     return { dot: 'bg-base-content/30', text: 'idle', color: 'text-base-content/50' }
+  }
+
+  function handleDragStart(e: DragEvent, projectId: string) {
+    draggedProjectId = projectId
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = 'move'
+      e.dataTransfer.setData('text/plain', projectId)
+    }
+  }
+
+  function handleDragOver(e: DragEvent, projectId: string) {
+    e.preventDefault()
+    if (e.dataTransfer) {
+      e.dataTransfer.dropEffect = 'move'
+    }
+    if (draggedProjectId && projectId !== draggedProjectId) {
+      dropTargetId = projectId
+    }
+  }
+
+  function handleDragLeave() {
+    dropTargetId = null
+  }
+
+  function handleDrop(e: DragEvent, targetProjectId: string) {
+    e.preventDefault()
+    dropTargetId = null
+    if (!draggedProjectId || draggedProjectId === targetProjectId) return
+
+    const currentProjects = $projects
+    const dragIdx = currentProjects.findIndex(p => p.id === draggedProjectId)
+    const dropIdx = currentProjects.findIndex(p => p.id === targetProjectId)
+    if (dragIdx === -1 || dropIdx === -1) return
+
+    const reordered = [...currentProjects]
+    const [moved] = reordered.splice(dragIdx, 1)
+    reordered.splice(dropIdx, 0, moved)
+
+    $projects = reordered
+    draggedProjectId = null
+
+    const projectIds = reordered.map(p => p.id)
+    reorderProjects(projectIds).catch((err: unknown) => {
+      console.error('Failed to persist project order:', err)
+    })
+  }
+
+  function handleDragEnd() {
+    draggedProjectId = null
+    dropTargetId = null
   }
 
   const bottomNavItems: { view: AppView; Icon: typeof ListChecks; label: string }[] = [
@@ -106,13 +159,21 @@
     {#each $projects as project (project.id)}
       {@const status = getAttentionStatus(project.id)}
       {@const isActive = project.id === $activeProjectId && currentView !== 'workqueue' && currentView !== 'global_settings'}
+      {@const isDragging = project.id === draggedProjectId}
+      {@const isDropTarget = project.id === dropTargetId}
 
       {#if collapsed}
         <button
           type="button"
-          class="w-full flex justify-center py-2 transition-colors {isActive ? 'bg-base-100' : 'hover:bg-base-200'}"
+          class="w-full flex justify-center py-2 transition-colors {isActive ? 'bg-base-100' : 'hover:bg-base-200'} {isDragging ? 'opacity-40' : ''} {isDropTarget ? 'border-t-2 border-t-primary' : ''}"
           aria-current={isActive ? 'true' : undefined}
           title={project.name}
+          draggable="true"
+          ondragstart={(e: DragEvent) => handleDragStart(e, project.id)}
+          ondragover={(e: DragEvent) => handleDragOver(e, project.id)}
+          ondragleave={handleDragLeave}
+          ondrop={(e: DragEvent) => handleDrop(e, project.id)}
+          ondragend={handleDragEnd}
           onclick={() => selectProject(project.id)}
         >
           <div class="relative">
@@ -125,8 +186,14 @@
       {:else}
         <button
           type="button"
-          class="w-full px-3 py-2 text-left border-l-2 transition-colors {isActive ? 'border-primary bg-base-100' : 'border-transparent hover:bg-base-200'}"
+          class="w-full px-3 py-2 text-left border-l-2 transition-colors {isActive ? 'border-primary bg-base-100' : 'border-transparent hover:bg-base-200'} {isDragging ? 'opacity-40' : ''} {isDropTarget ? 'border-t-2 border-t-primary' : ''}"
           aria-current={isActive ? 'true' : undefined}
+          draggable="true"
+          ondragstart={(e: DragEvent) => handleDragStart(e, project.id)}
+          ondragover={(e: DragEvent) => handleDragOver(e, project.id)}
+          ondragleave={handleDragLeave}
+          ondrop={(e: DragEvent) => handleDrop(e, project.id)}
+          ondragend={handleDragEnd}
           onclick={() => selectProject(project.id)}
         >
           <div class="font-mono text-xs {isActive ? 'font-bold text-base-content' : 'font-medium text-base-content'}">{project.name}</div>

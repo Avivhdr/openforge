@@ -355,6 +355,7 @@ fn main() {
             commands::projects::get_tasks_for_project,
             commands::projects::get_worktree_for_task,
             commands::projects::get_project_attention,
+            commands::projects::reorder_projects,
             commands::orchestration::start_implementation,
             commands::orchestration::abort_implementation,
             commands::orchestration::finalize_claude_session,

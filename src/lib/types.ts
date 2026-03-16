@@ -152,6 +152,7 @@ export interface Project {
   path: string;
   created_at: number;
   updated_at: number;
+  sort_order: number;
 }
 
 export interface ProjectAttention {

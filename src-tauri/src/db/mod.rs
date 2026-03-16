@@ -226,7 +226,8 @@ CREATE TABLE IF NOT EXISTS projects (
     name TEXT NOT NULL,
     path TEXT NOT NULL,
     created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
+    updated_at INTEGER NOT NULL,
+    sort_order INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS project_config (
@@ -640,6 +641,42 @@ CREATE INDEX IF NOT EXISTS idx_authored_prs_repo ON authored_prs(repo_owner, rep
 CREATE INDEX IF NOT EXISTS idx_authored_prs_state ON authored_prs(state);
             "#,
         ),
+        // V14: Add sort_order column to projects for user-defined ordering
+        M::up_with_hook("", |tx| {
+            let table_exists: bool = tx
+                .query_row(
+                    "SELECT COUNT(*) > 0 FROM sqlite_master WHERE type='table' AND name='projects'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap_or(false);
+            if table_exists {
+                let has_col: bool = tx
+                    .query_row(
+                        "SELECT COUNT(*) > 0 FROM pragma_table_info('projects') WHERE name = 'sort_order'",
+                        [],
+                        |r| r.get(0),
+                    )
+                    .unwrap_or(false);
+                if !has_col {
+                    tx.execute(
+                        "ALTER TABLE projects ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0",
+                        [],
+                    )
+                    .map_err(rusqlite_migration::HookError::RusqliteError)?;
+                    // Backfill: assign sort_order based on current updated_at DESC ordering
+                    // so existing users see the same order they had before
+                    tx.execute_batch(
+                        "UPDATE projects SET sort_order = (
+                            SELECT COUNT(*) FROM projects p2 WHERE p2.updated_at > projects.updated_at
+                               OR (p2.updated_at = projects.updated_at AND p2.id < projects.id)
+                        );"
+                    )
+                    .map_err(rusqlite_migration::HookError::RusqliteError)?;
+                }
+            }
+            Ok(())
+        }),
     ])
 }
 #[cfg(test)]
@@ -911,8 +948,8 @@ mod tests {
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
         assert_eq!(
-            uv, 13,
-            "Fresh DB should have user_version=13 after migrations, got {}",
+            uv, 14,
+            "Fresh DB should have user_version=14 after migrations, got {}",
             uv
         );
 

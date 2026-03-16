@@ -70,6 +70,7 @@ describe('SettingsView', () => {
         path: '/tmp/test',
         created_at: Date.now(),
         updated_at: Date.now(),
+        sort_order: 0,
       },
     ])
   })

@@ -96,3 +96,13 @@ pub async fn get_project_attention(
     db.get_project_attention_summaries()
         .map_err(|e| format!("Failed to get project attention: {}", e))
 }
+
+#[tauri::command]
+pub async fn reorder_projects(
+    db: State<'_, Arc<Mutex<db::Database>>>,
+    project_ids: Vec<String>,
+) -> Result<(), String> {
+    let db = crate::db::acquire_db(&db);
+    db.reorder_projects(&project_ids)
+        .map_err(|e| format!("Failed to reorder projects: {}", e))
+}

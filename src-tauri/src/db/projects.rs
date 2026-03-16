@@ -9,6 +9,7 @@ pub struct ProjectRow {
     pub path: String,
     pub created_at: i64,
     pub updated_at: i64,
+    pub sort_order: i64,
 }
 
 /// Attention summary for a project (cross-domain aggregation)
@@ -53,10 +54,20 @@ impl super::Database {
             .expect("time went backwards")
             .as_secs() as i64;
 
+        let max_sort: i64 = conn
+            .query_row(
+                "SELECT COALESCE(MAX(sort_order), -1) FROM projects",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(-1);
+
+        let sort_order = max_sort + 1;
+
         conn.execute(
-            "INSERT INTO projects (id, name, path, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-            rusqlite::params![&project_id, name, path, now, now],
+            "INSERT INTO projects (id, name, path, created_at, updated_at, sort_order)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![&project_id, name, path, now, now, sort_order],
         )?;
 
         Ok(ProjectRow {
@@ -65,6 +76,7 @@ impl super::Database {
             path: path.to_string(),
             created_at: now,
             updated_at: now,
+            sort_order,
         })
     }
 
@@ -72,8 +84,8 @@ impl super::Database {
     pub fn get_all_projects(&self) -> Result<Vec<ProjectRow>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, name, path, created_at, updated_at 
-             FROM projects ORDER BY updated_at DESC",
+            "SELECT id, name, path, created_at, updated_at, sort_order 
+             FROM projects ORDER BY sort_order ASC",
         )?;
 
         let projects = stmt.query_map([], |row| {
@@ -83,6 +95,7 @@ impl super::Database {
                 path: row.get(2)?,
                 created_at: row.get(3)?,
                 updated_at: row.get(4)?,
+                sort_order: row.get(5)?,
             })
         })?;
 
@@ -97,7 +110,7 @@ impl super::Database {
     pub fn get_project(&self, id: &str) -> Result<Option<ProjectRow>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, name, path, created_at, updated_at 
+            "SELECT id, name, path, created_at, updated_at, sort_order 
              FROM projects WHERE id = ?1",
         )?;
         let mut rows = stmt.query([id])?;
@@ -108,6 +121,7 @@ impl super::Database {
                 path: row.get(2)?,
                 created_at: row.get(3)?,
                 updated_at: row.get(4)?,
+                sort_order: row.get(5)?,
             }))
         } else {
             Ok(None)
@@ -210,7 +224,7 @@ impl super::Database {
     pub fn find_project_by_github_repo(&self, repo_full_name: &str) -> Result<Option<ProjectRow>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT p.id, p.name, p.path, p.created_at, p.updated_at
+            "SELECT p.id, p.name, p.path, p.created_at, p.updated_at, p.sort_order
              FROM projects p
              JOIN project_config pc ON p.id = pc.project_id
              WHERE pc.key = 'github_default_repo' AND pc.value = ?1",
@@ -223,10 +237,25 @@ impl super::Database {
                 path: row.get(2)?,
                 created_at: row.get(3)?,
                 updated_at: row.get(4)?,
+                sort_order: row.get(5)?,
             }))
         } else {
             Ok(None)
         }
+    }
+
+    /// Persist a new display order for projects.
+    /// `project_ids` contains all project IDs in the desired order.
+    pub fn reorder_projects(&self, project_ids: &[String]) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let tx = conn.unchecked_transaction()?;
+        for (idx, id) in project_ids.iter().enumerate() {
+            tx.execute(
+                "UPDATE projects SET sort_order = ?1 WHERE id = ?2",
+                rusqlite::params![idx as i64, id],
+            )?;
+        }
+        tx.commit()
     }
 
     /// Get attention summaries for all projects.
@@ -689,5 +718,72 @@ mod tests {
 
         drop(db);
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_projects_created_with_incrementing_sort_order() {
+        let (db, path) = make_test_db("sort_order_auto");
+
+        let p1 = db.create_project("First", "/tmp/1").expect("create failed");
+        let p2 = db
+            .create_project("Second", "/tmp/2")
+            .expect("create failed");
+        let p3 = db.create_project("Third", "/tmp/3").expect("create failed");
+
+        assert_eq!(p1.sort_order, 0);
+        assert_eq!(p2.sort_order, 1);
+        assert_eq!(p3.sort_order, 2);
+
+        let all = db.get_all_projects().expect("get failed");
+        assert_eq!(all[0].id, p1.id);
+        assert_eq!(all[1].id, p2.id);
+        assert_eq!(all[2].id, p3.id);
+
+        drop(db);
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_reorder_projects() {
+        let (db, path) = make_test_db("reorder_projects");
+
+        let p1 = db.create_project("Alpha", "/tmp/a").expect("create failed");
+        let p2 = db.create_project("Beta", "/tmp/b").expect("create failed");
+        let p3 = db.create_project("Gamma", "/tmp/c").expect("create failed");
+
+        db.reorder_projects(&[p3.id.clone(), p1.id.clone(), p2.id.clone()])
+            .expect("reorder failed");
+
+        let all = db.get_all_projects().expect("get failed");
+        assert_eq!(all[0].id, p3.id);
+        assert_eq!(all[1].id, p1.id);
+        assert_eq!(all[2].id, p2.id);
+
+        assert_eq!(all[0].sort_order, 0);
+        assert_eq!(all[1].sort_order, 1);
+        assert_eq!(all[2].sort_order, 2);
+
+        drop(db);
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_reorder_projects_idempotent() {
+        let (db, path) = make_test_db("reorder_idempotent");
+
+        let p1 = db.create_project("Alpha", "/tmp/a").expect("create failed");
+        let p2 = db.create_project("Beta", "/tmp/b").expect("create failed");
+
+        db.reorder_projects(&[p1.id.clone(), p2.id.clone()])
+            .expect("reorder failed");
+        db.reorder_projects(&[p1.id.clone(), p2.id.clone()])
+            .expect("second reorder failed");
+
+        let all = db.get_all_projects().expect("get failed");
+        assert_eq!(all[0].id, p1.id);
+        assert_eq!(all[1].id, p2.id);
+
+        drop(db);
+        let _ = fs::remove_file(&path);
     }
 }

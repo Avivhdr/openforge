@@ -14,15 +14,17 @@ vi.mock('../lib/stores', () => ({
 }))
 
 const mockGetProjectAttention = vi.fn(async () => [])
+const mockReorderProjects = vi.fn(async () => {})
 
 vi.mock('../lib/ipc', () => ({
   getProjectAttention: mockGetProjectAttention,
+  reorderProjects: mockReorderProjects,
 }))
 
 const sampleProjects: Project[] = [
-  { id: 'proj-1', name: 'Alpha Project', path: '/users/alice/alpha', created_at: 0, updated_at: 0 },
-  { id: 'proj-2', name: 'Beta Project', path: '/users/bob/beta', created_at: 0, updated_at: 0 },
-  { id: 'proj-3', name: 'Gamma Repo', path: '/users/carol/gamma', created_at: 0, updated_at: 0 },
+  { id: 'proj-1', name: 'Alpha Project', path: '/users/alice/alpha', created_at: 0, updated_at: 0, sort_order: 0 },
+  { id: 'proj-2', name: 'Beta Project', path: '/users/bob/beta', created_at: 0, updated_at: 0, sort_order: 1 },
+  { id: 'proj-3', name: 'Gamma Repo', path: '/users/carol/gamma', created_at: 0, updated_at: 0, sort_order: 2 },
 ]
 
 describe('ProjectSidebar', () => {
@@ -107,6 +109,84 @@ describe('ProjectSidebar', () => {
 
     await vi.waitFor(() => {
       expect(mockGetProjectAttention).toHaveBeenCalledOnce()
+    })
+  })
+
+  describe('drag-and-drop reorder', () => {
+    it('reorders projects in store after drop and calls reorderProjects IPC', async () => {
+      const { default: ProjectSidebar } = await import('./ProjectSidebar.svelte')
+      render(ProjectSidebar)
+
+      const alphaBtn = screen.getByRole('button', { name: /alpha project/i })
+      const gammaBtn = screen.getByRole('button', { name: /gamma repo/i })
+
+      await fireEvent.dragStart(alphaBtn, {
+        dataTransfer: { effectAllowed: 'move', setData: vi.fn() },
+      })
+      await fireEvent.dragOver(gammaBtn, {
+        dataTransfer: { dropEffect: 'move' },
+      })
+      await fireEvent.drop(gammaBtn, {
+        dataTransfer: { dropEffect: 'move' },
+      })
+
+      const updatedProjects = get(mockProjects)
+      expect(updatedProjects.map(p => p.id)).toEqual(['proj-2', 'proj-3', 'proj-1'])
+
+      expect(mockReorderProjects).toHaveBeenCalledWith(['proj-2', 'proj-3', 'proj-1'])
+    })
+
+    it('does not reorder when dropping on the same project', async () => {
+      const { default: ProjectSidebar } = await import('./ProjectSidebar.svelte')
+      render(ProjectSidebar)
+
+      const alphaBtn = screen.getByRole('button', { name: /alpha project/i })
+
+      await fireEvent.dragStart(alphaBtn, {
+        dataTransfer: { effectAllowed: 'move', setData: vi.fn() },
+      })
+      await fireEvent.drop(alphaBtn, {
+        dataTransfer: { dropEffect: 'move' },
+      })
+
+      const updatedProjects = get(mockProjects)
+      expect(updatedProjects.map(p => p.id)).toEqual(['proj-1', 'proj-2', 'proj-3'])
+      expect(mockReorderProjects).not.toHaveBeenCalled()
+    })
+
+    it('moves last project to first position', async () => {
+      const { default: ProjectSidebar } = await import('./ProjectSidebar.svelte')
+      render(ProjectSidebar)
+
+      const gammaBtn = screen.getByRole('button', { name: /gamma repo/i })
+      const alphaBtn = screen.getByRole('button', { name: /alpha project/i })
+
+      await fireEvent.dragStart(gammaBtn, {
+        dataTransfer: { effectAllowed: 'move', setData: vi.fn() },
+      })
+      await fireEvent.dragOver(alphaBtn, {
+        dataTransfer: { dropEffect: 'move' },
+      })
+      await fireEvent.drop(alphaBtn, {
+        dataTransfer: { dropEffect: 'move' },
+      })
+
+      const updatedProjects = get(mockProjects)
+      expect(updatedProjects.map(p => p.id)).toEqual(['proj-3', 'proj-1', 'proj-2'])
+      expect(mockReorderProjects).toHaveBeenCalledWith(['proj-3', 'proj-1', 'proj-2'])
+    })
+
+    it('project buttons have draggable attribute', async () => {
+      const { default: ProjectSidebar } = await import('./ProjectSidebar.svelte')
+      render(ProjectSidebar)
+
+      const alphaBtn = screen.getByRole('button', { name: /alpha project/i })
+      const betaBtn = screen.getByRole('button', { name: /beta project/i })
+      const gammaBtn = screen.getByRole('button', { name: /gamma repo/i })
+
+      expect(alphaBtn.getAttribute('draggable')).toBe('true')
+      expect(betaBtn.getAttribute('draggable')).toBe('true')
+      expect(gammaBtn.getAttribute('draggable')).toBe('true')
     })
   })
 })

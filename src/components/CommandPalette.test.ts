@@ -9,6 +9,7 @@ function makeProject(overrides: Partial<Project> & { id: string; name: string })
     path: '/tmp/test',
     created_at: 1000,
     updated_at: 1000,
+    sort_order: 0,
     ...overrides,
   }
 }

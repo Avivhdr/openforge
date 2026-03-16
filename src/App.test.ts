@@ -51,7 +51,7 @@ vi.mock('./lib/stores', () => ({
 vi.mock('./lib/ipc', () => ({
   getProjects: vi.fn(async () => {
     callOrder.push('getProjects')
-    return [{ id: 'proj-1', name: 'Test Project', path: '/test' }]
+    return [{ id: 'proj-1', name: 'Test Project', path: '/test', sort_order: 0 }]
   }),
   getTasksForProject: vi.fn(async () => {
     callOrder.push('getTasksForProject')
@@ -138,6 +138,7 @@ vi.mock('./lib/ipc', () => ({
     return []
   }),
   getAuthoredPrs: vi.fn(async () => []),
+  reorderProjects: vi.fn(async () => {}),
 }))
 
 vi.mock('./components/KanbanBoard.svelte', () => ({ default: vi.fn() }))
@@ -300,8 +301,8 @@ describe('App onMount initialization order', () => {
       const { get } = await import('svelte/store')
 
       const projectList: Project[] = [
-        { id: 'proj-1', name: 'Project One', path: '/test/one', created_at: 0, updated_at: 0 },
-        { id: 'proj-2', name: 'Project Two', path: '/test/two', created_at: 0, updated_at: 0 },
+        { id: 'proj-1', name: 'Project One', path: '/test/one', created_at: 0, updated_at: 0, sort_order: 0 },
+        { id: 'proj-2', name: 'Project Two', path: '/test/two', created_at: 0, updated_at: 0, sort_order: 1 },
       ]
       vi.mocked(ipc.getProjects).mockResolvedValue(projectList)
 
@@ -324,8 +325,8 @@ describe('App onMount initialization order', () => {
       const { get } = await import('svelte/store')
 
       const projectList: Project[] = [
-        { id: 'proj-1', name: 'Project One', path: '/test/one', created_at: 0, updated_at: 0 },
-        { id: 'proj-2', name: 'Project Two', path: '/test/two', created_at: 0, updated_at: 0 },
+        { id: 'proj-1', name: 'Project One', path: '/test/one', created_at: 0, updated_at: 0, sort_order: 0 },
+        { id: 'proj-2', name: 'Project Two', path: '/test/two', created_at: 0, updated_at: 0, sort_order: 1 },
       ]
       vi.mocked(ipc.getProjects).mockResolvedValue(projectList)
 
@@ -348,8 +349,8 @@ describe('App onMount initialization order', () => {
       const { get } = await import('svelte/store')
 
       const projectList: Project[] = [
-        { id: 'proj-1', name: 'Project One', path: '/test/one', created_at: 0, updated_at: 0 },
-        { id: 'proj-2', name: 'Project Two', path: '/test/two', created_at: 0, updated_at: 0 },
+        { id: 'proj-1', name: 'Project One', path: '/test/one', created_at: 0, updated_at: 0, sort_order: 0 },
+        { id: 'proj-2', name: 'Project Two', path: '/test/two', created_at: 0, updated_at: 0, sort_order: 1 },
       ]
       vi.mocked(ipc.getProjects).mockResolvedValue(projectList)
 
@@ -372,8 +373,8 @@ describe('App onMount initialization order', () => {
       const { get } = await import('svelte/store')
 
       const projectList: Project[] = [
-        { id: 'proj-1', name: 'Project One', path: '/test/one', created_at: 0, updated_at: 0 },
-        { id: 'proj-2', name: 'Project Two', path: '/test/two', created_at: 0, updated_at: 0 },
+        { id: 'proj-1', name: 'Project One', path: '/test/one', created_at: 0, updated_at: 0, sort_order: 0 },
+        { id: 'proj-2', name: 'Project Two', path: '/test/two', created_at: 0, updated_at: 0, sort_order: 1 },
       ]
       vi.mocked(ipc.getProjects).mockResolvedValue(projectList)
 
